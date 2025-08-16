@@ -1,0 +1,242 @@
+{% extends "execution_plan/base.html" %}
+
+{% block content %}
+<!-- 计划执行页面 -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">计划执行状态</h2>
+        <div>
+            <button class="btn btn-outline" onclick="location.reload()">
+                <i class="fas fa-sync-alt"></i> 刷新
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>计划名称</th>
+                    <th>执行类型</th>
+                    <th>状态</th>
+                    <th>最后执行时间</th>
+                    <th>最后执行结果</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if plans_with_status %}
+                    {% for item in plans_with_status %}
+                    <tr>
+                        <td>{{ item.plan.name }}</td>
+                        <td>{{ '定时执行' if item.plan.type == 'scheduled' else '手动执行' }}</td>
+                        <td>
+                            <span class="status-badge {{ 'status-active' if item.plan.status == 'active' else 'status-inactive' }}">
+                                {{ '启用' if item.plan.status == 'active' else '禁用' }}
+                            </span>
+                        </td>
+                        <td>
+                            {{ item.last_execution.started_at if item.last_execution else '从未执行' }}
+                        </td>
+                        <td>
+                            {% if item.last_execution %}
+                                <span class="status-badge {{ 
+                                    'status-success' if item.last_execution.status == 'success' else 
+                                    'status-failed' if item.last_execution.status == 'failed' else 
+                                    'status-running' 
+                                }}">
+                                    {{ item.last_execution.result or item.last_execution.status }}
+                                </span>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-primary btn-sm" 
+                                    onclick="executePlan('{{ item.plan.id }}', '{{ item.plan.name }}')"
+                                    {% if item.plan.status != 'active' %}disabled title="请先启用计划"{% endif %}>
+                                <i class="fas fa-play"></i> 立即执行
+                            </button>
+                            {% if item.last_execution %}
+                            <button class="btn btn-outline btn-sm" 
+                                    onclick="viewExecutionDetails('{{ item.last_execution.id }}')">
+                                <i class="fas fa-info-circle"></i> 详情
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 30px;">
+                            <i class="fas fa-tasks" style="font-size: 32px; color: #ddd; margin-bottom: 10px;"></i>
+                            <p>暂无执行计划，请先到"计划配置"页面创建计划</p>
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 执行确认模态框 -->
+<div class="modal-backdrop" id="executeConfirmModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 class="modal-title">确认执行</h3>
+            <button class="modal-close" onclick="hideModal('executeConfirmModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p>确定要立即执行计划 "<span id="executePlanName" style="font-weight: 600;"></span>" 吗？</p>
+            <form id="executeForm" method="post">
+                <input type="hidden" name="plan_id" id="executePlanId">
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="hideModal('executeConfirmModal')">取消</button>
+            <button class="btn btn-primary" onclick="document.getElementById('executeForm').submit()">确认执行</button>
+        </div>
+    </div>
+</div>
+
+<!-- 执行详情模态框 -->
+<div class="modal-backdrop" id="executionDetailsModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 class="modal-title">执行详情</h3>
+            <button class="modal-close" onclick="hideModal('executionDetailsModal')">&times;</button>
+        </div>
+        <div class="modal-body" id="executionDetailsContent">
+            <!-- 执行详情内容将通过JavaScript动态加载 -->
+            <div style="text-align: center; padding: 20px;">
+                <i class="fas fa-spinner fa-spin" style="font-size: 24px; color: #1a73e8;"></i>
+                <p>加载详情中...</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" onclick="hideModal('executionDetailsModal')">关闭</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 执行计划
+    function executePlan(planId, planName) {
+        document.getElementById('executePlanId').value = planId;
+        document.getElementById('executePlanName').textContent = planName;
+        showModal('executeConfirmModal');
+    }
+    
+    // 查看执行详情
+    function viewExecutionDetails(logId) {
+        // 显示加载状态
+        document.getElementById('executionDetailsContent').innerHTML = `
+            <div style="text-align: center; padding: 20px;">
+                <i class="fas fa-spinner fa-spin" style="font-size: 24px; color: #1a73e8;"></i>
+                <p>加载详情中...</p>
+            </div>
+        `;
+        
+        // 显示模态框
+        showModal('executionDetailsModal');
+        
+        // 异步获取详情
+        fetch(`{{ url_for('log_details', log_id='') }}${logId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('获取详情失败');
+                }
+                return response.json();
+            })
+            .then(log => {
+                // 构建详情HTML
+                let detailsHtml = `
+                    <div class="execution-summary">
+                        <p><strong>计划名称：</strong>${log.plan_name}</p>
+                        <p><strong>执行状态：</strong>
+                            <span class="status-badge ${
+                                log.status === 'success' ? 'status-success' : 
+                                log.status === 'failed' ? 'status-failed' : 'status-running'
+                            }">
+                                ${log.result || log.status}
+                            </span>
+                        </p>
+                        <p><strong>执行者：</strong>${log.executed_by}</p>
+                        <p><strong>开始时间：</strong>${log.started_at}</p>
+                        <p><strong>完成时间：</strong>${log.completed_at || '执行中'}</p>
+                        ${log.completed_at ? `<p><strong>执行时长：</strong>${calculateDuration(log.started_at, log.completed_at)}</p>` : ''}
+                    </div>
+                    
+                    <div style="margin-top: 20px;">
+                        <h4 style="margin-bottom: 10px;">任务执行详情</h4>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>任务名称</th>
+                                    <th>状态</th>
+                                    <th>耗时</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                // 添加任务详情
+                if (log.details && log.details.length > 0) {
+                    log.details.forEach(task => {
+                        detailsHtml += `
+                            <tr>
+                                <td>${task.task}</td>
+                                <td>
+                                    <span class="status-badge ${task.status === 'success' ? 'status-success' : 'status-failed'}">
+                                        ${task.status === 'success' ? '成功' : '失败'}
+                                    </span>
+                                </td>
+                                <td>${task.duration || '-'}</td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    detailsHtml += `
+                        <tr>
+                            <td colspan="3" style="text-align: center;">无任务执行记录</td>
+                        </tr>
+                    `;
+                }
+                
+                detailsHtml += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                
+                // 更新模态框内容
+                document.getElementById('executionDetailsContent').innerHTML = detailsHtml;
+            })
+            .catch(error => {
+                document.getElementById('executionDetailsContent').innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: #d93025;">
+                        <i class="fas fa-exclamation-circle" style="font-size: 24px;"></i>
+                        <p>加载详情失败：${error.message}</p>
+                    </div>
+                `;
+            });
+    }
+    
+    // 计算执行时长
+    function calculateDuration(startTime, endTime) {
+        const start = new Date(startTime);
+        const end = new Date(endTime);
+        const diffMs = end - start;
+        
+        if (diffMs < 1000) {
+            return `${diffMs}ms`;
+        } else if (diffMs < 60000) {
+            return `${(diffMs / 1000).toFixed(1)}s`;
+        } else {
+            const minutes = Math.floor(diffMs / 60000);
+            const seconds = Math.floor((diffMs % 60000) / 1000);
+            return `${minutes}m${seconds}s`;
+        }
+    }
+</script>
+{% endblock %}
+    

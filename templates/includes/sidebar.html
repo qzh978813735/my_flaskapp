@@ -1,0 +1,70 @@
+<!-- 完整的侧边栏代码，包含所有正确链接 -->
+<aside class="sidebar">
+    <div class="sidebar-header">
+        <h1 class="sidebar-title">系统管理平台</h1>
+    </div>
+    <ul class="sidebar-menu">
+        <!-- 仪表盘 -->
+        <li class="menu-item">
+            <a href="{{ url_for('dashboard') }}" class="menu-link {% if request.path == '/dashboard' %}active{% endif %}">
+                <i class="fas fa-tachometer-alt menu-icon"></i>
+                <span class="menu-text">仪表盘</span>
+            </a>
+        </li>
+
+        <!-- 用户管理 -->
+        <li class="menu-item">
+            <a href="{{ url_for('user_management') }}" class="menu-link {% if request.path.startswith('/user_management') %}active{% endif %}">
+                <i class="fas fa-users menu-icon"></i>
+                <span class="menu-text">用户管理</span>
+            </a>
+        </li>
+
+        <!-- 邮件配置 -->
+        <li class="menu-item">
+            <a href="{{ url_for('email_config') }}" class="menu-link {% if request.path.startswith('/email_config') %}active{% endif %}">
+                <i class="fas fa-envelope menu-icon"></i>
+                <span class="menu-text">邮件配置</span>
+            </a>
+        </li>
+
+        <!-- 环境配置 (假设路由函数为environment_config) -->
+        <li class="menu-item">
+            <a href="{{ url_for('environment_config') }}" class="menu-link {% if request.path.startswith('/environment_config') %}active{% endif %}">
+                <i class="fas fa-cogs menu-icon"></i>
+                <span class="menu-text">环境配置</span>
+            </a>
+        </li>
+
+        <!-- MOCK数据 -->
+        <li class="menu-item">
+            <a href="{{ url_for('mock_data') }}" class="menu-link {% if request.path.startswith('/mock_data') %}active{% endif %}">
+                <i class="fas fa-database menu-icon"></i>
+                <span class="menu-text">MOCK数据</span>
+            </a>
+        </li>
+
+        <!-- 接口测试 (假设路由函数为api_test) -->
+        <li class="menu-item">
+            <a href="{{ url_for('api_test') }}" class="menu-link {% if request.path.startswith('/api_test') %}active{% endif %}">
+                <i class="fas fa-code menu-icon"></i>
+                <span class="menu-text">接口测试</span>
+            </a>
+        </li>
+
+        <!-- 执行计划 (假设路由函数为execution_plan) -->
+<!--        <li class="menu-item">-->
+<!--            <a href="{{ url_for('execution_plan') }}" class="menu-link {% if request.path.startswith('/execution_plan') %}active{% endif %}">-->
+<!--                <i class="fas fa-tasks menu-icon"></i>-->
+<!--                <span class="menu-text">执行计划</span>-->
+<!--            </a>-->
+<!--        </li>-->
+        <!-- 修改为 -->
+        <li class="menu-item">
+            <a href="{{ url_for('execution_plan') }}" class="menu-link {% if request.path.startswith('/execution_plan') %}active{% endif %}">
+                <i class="fas fa-calendar-alt menu-icon"></i>  <!-- 统一为日历图标 -->
+                <span class="menu-text">执行计划</span>
+            </a>
+        </li>
+    </ul>
+</aside>

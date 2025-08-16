@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>用户权限变更 - 用户管理</title>
+</head>
+<body>
+    {% extends "user_management_base.html" %}
+
+    {% block content %}
+    <!-- 用户权限变更内容 -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">用户权限变更</h2>
+            <span class="hint">修改用户的角色和权限范围</span>
+        </div>
+        <div class="card-body">
+            <form method="post" id="permissionChangeForm">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="username">选择用户</label>
+                        <select class="form-select" id="username" name="username" required>
+                            <option value="">-- 请选择用户 --</option>
+                            {% for user_id, user_info in users.items() %}
+                            <option value="{{ user_id }}">{{ user_info.name }} ({{ user_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="role">新角色</label>
+                        <select class="form-select" id="role" name="role" required>
+                            <option value="admin">超级管理员</option>
+                            <option value="operator">操作员</option>
+                            <option value="viewer">查看者</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" {% if current_user_role != 'admin' %}disabled title="只有超级管理员可以修改权限"{% endif %}>
+                        <i class="fas fa-save"></i> 保存权限变更
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 用户列表 -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">用户列表</h2>
+            <span class="badge">{{ users|length }} 个用户</span>
+        </div>
+        <div class="card-body">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>序号</th>
+                        <th>用户名</th>
+                        <th>姓名</th>
+                        <th>当前角色</th>
+                        <th>状态</th>
+                        <th>创建时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user_id, user_info in users.items() %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ user_id }}</td>
+                        <td>{{ user_info.name }}</td>
+                        <td>
+                            <span class="role-badge role-{{ user_info.role }}">
+                                {% if user_info.role == 'admin' %}超级管理员{% elif user_info.role == 'operator' %}操作员{% else %}查看者{% endif %}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="status-badge {% if user_info.status == 'active' %}status-active{% else %}status-disabled{% endif %}">
+                                {{ '已激活' if user_info.status == 'active' else '已禁用' }}
+                            </span>
+                        </td>
+                        <td>{{ user_info.create_time }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // 如果不是超级管理员，显示提示
+        document.addEventListener('DOMContentLoaded', function() {
+            {% if current_user_role != 'admin' %}
+            const submitBtn = document.querySelector('#permissionChangeForm button[type="submit"]');
+            submitBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                alert('只有超级管理员可以修改用户权限');
+            });
+            {% endif %}
+        });
+    </script>
+    {% endblock %}
+</body>
+</html>

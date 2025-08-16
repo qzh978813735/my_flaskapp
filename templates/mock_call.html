@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOCK接口调用 - 自动化测试平台</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* 基础样式继承自主框架 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #f0f2f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* 侧边栏样式 */
+        .sidebar {
+            width: 250px;
+            background-color: #202124;
+            color: white;
+            padding: 20px 0;
+            transition: all 0.3s ease;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar-header {
+            padding: 0 20px 20px;
+            border-bottom: 1px solid #3c4043;
+            margin-bottom: 20px;
+        }
+
+        .sidebar-logo {
+        .sidebar-logo {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a73e8;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sidebar-menu {
+            list-style: none;
+        }
+
+        .menu-item {
+            margin-bottom: 5px;
+        }
+
+        .menu-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 20px;
+            color: #dadce0;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .menu-link:hover, .menu-link.active {
+            background-color: #3c4043;
+            color: white;
+            border-left-color: #1a73e8;
+        }
+
+        .menu-icon {
+            font-size: 18px;
+            width: 20px;
+            text-align: center;
+        }
+
+        /* 主内容区域 */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 顶部导航栏 */
+        .top-nav {
+            background-color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+
+        .nav-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #202124;
+        }
+
+        .breadcrumbs {
+            font-size: 14px;
+            color: #5f6368;
+        }
+
+        .breadcrumbs a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        .breadcrumbs a:hover {
+            text-decoration: underline;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background-color: #1a73e8;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+
+        .logout-btn {
+            color: #d93025;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 10px;
+            border-radius: 4px;
+            transition: background-color 0.2s ease;
+        }
+
+        .logout-btn:hover {
+            background-color: rgba(217, 48, 37, 0.1);
+        }
+
+        /* 页面内容区域 */
+        .page-content {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        .dashboard-card {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.05);
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #202124;
+            margin: 0;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background-color: #1a73e8;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #1765cc;
+        }
+
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #1a73e8;
+            color: #1a73e8;
+        }
+
+        .btn-outline:hover {
+            background-color: #1a73e8;
+            color: white;
+        }
+
+        /* 表单样式 */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #202124;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+        }
+
+        textarea.form-control {
+            min-height: 120px;
+            resize: vertical;
+            font-family: monospace;
+        }
+
+        select.form-control {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235f6368' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 30px;
+        }
+
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        /* 响应和请求区域 */
+        .response-section {
+            margin-top: 30px;
+        }
+
+        .section-tabs {
+            display: flex;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 20px;
+        }
+
+        .section-tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            font-weight: 500;
+            color: #5f6368;
+            transition: all 0.2s ease;
+        }
+
+        .section-tab.active {
+            border-bottom-color: #1a73e8;
+            color: #1a73e8;
+        }
+
+        .section-content {
+            display: none;
+        }
+
+        .section-content.active {
+            display: block;
+        }
+
+        .code-block {
+            position: relative;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            line-height: 1.5;
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: white;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
+            padding: 5px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.2s ease;
+        }
+
+        .copy-btn:hover {
+            background-color: #f1f3f4;
+        }
+
+        .status-code {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+
+        .status-success {
+            background-color: #e6f4ea;
+            color: #137333;
+        }
+
+        .status-error {
+            background-color: #fce8e6;
+            color: #d93025;
+        }
+
+        .request-info {
+            font-size: 14px;
+            color: #5f6368;
+            margin-bottom: 10px;
+        }
+
+        /* 接口列表样式 */
+        .interfaces-list {
+            margin-top: 30px;
+        }
+
+        .interface-item {
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #eee;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .interface-item:hover {
+            background-color: #f8f9fa;
+            border-color: #dadce0;
+        }
+
+        .interface-item.selected {
+            border-color: #1a73e8;
+            background-color: #e8f0fe;
+        }
+
+        .interface-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .interface-name {
+            font-weight: 500;
+        }
+
+        .method-badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .method-get {
+            background-color: #e6f4ea;
+            color: #137333;
+        }
+
+        .method-post {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+        }
+
+        .method-put {
+            background-color: #fff8e6;
+            color: #e37400;
+        }
+
+        .method-delete {
+            background-color: #fce8e6;
+            color: #d93025;
+        }
+
+        .interface-path {
+            font-size: 14px;
+            color: #5f6368;
+            font-family: monospace;
+        }
+
+        /* 消息提示样式 */
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+
+        .message {
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .success {
+            background-color: #e6f4ea;
+            color: #137333;
+            border: 1px solid #d3e7d3;
+        }
+
+        .error {
+            background-color: #fce8e6;
+            color: #d93025;
+            border: 1px solid #f8d7da;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                padding: 10px 0;
+            }
+
+            .sidebar-menu {
+                display: flex;
+                overflow-x: auto;
+            }
+
+            .menu-item {
+                margin-bottom: 0;
+                flex: 0 0 auto;
+            }
+
+            .menu-link {
+                flex-direction: column;
+                padding: 10px 15px;
+                text-align: center;
+            }
+
+            .menu-text {
+                font-size: 12px;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏菜单 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <i class="fas fa-robot"></i>
+                    <span>自动化测试平台</span>
+                </div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item">
+                    <a href="{{ url_for('dashboard') }}" class="menu-link">
+                        <i class="fas fa-tachometer-alt menu-icon"></i>
+                        <span class="menu-text">仪表盘</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('user_management') }}" class="menu-link">
+                        <i class="fas fa-users menu-icon"></i>
+                        <span class="menu-text">用户管理</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('environment_config') }}" class="menu-link">
+                        <i class="fas fa-cogs menu-icon"></i>
+                        <span class="menu-text">环境配置</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('email_config') }}" class="menu-link">
+                        <i class="fas fa-envelope menu-icon"></i>
+                        <span class="menu-text">邮件配置</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('api_test') }}" class="menu-link">
+                        <i class="fas fa-plug menu-icon"></i>
+                        <span class="menu-text">接口测试</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('execution_plan') }}" class="menu-link">
+                        <i class="fas fa-calendar-alt menu-icon"></i>
+                        <span class="menu-text">执行计划</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('mock_data') }}" class="menu-link">
+                        <i class="fas fa-database menu-icon"></i>
+                        <span class="menu-text">MOCK数据</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('mock_config') }}" class="menu-link">
+                        <i class="fas fa-sliders-h menu-icon"></i>
+                        <span class="menu-text">MOCK接口配置</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('mock_call') }}" class="menu-link active">
+                        <i class="fas fa-exchange-alt menu-icon"></i>
+                        <span class="menu-text">MOCK接口调用</span>
+                    </a>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- 主内容区域 -->
+        <main class="main-content">
+            <!-- 顶部导航栏 -->
+            <nav class="top-nav">
+                <div>
+                    <h1 class="nav-title">MOCK接口调用</h1>
+                    <div class="breadcrumbs">
+                        <a href="{{ url_for('dashboard') }}">首页</a> &gt;
+                        <a href="{{ url_for('mock_data') }}">MOCK数据</a> &gt;
+                        <span>MOCK接口调用</span>
+                    </div>
+                </div>
+                <div class="user-info">
+                    <div class="user-avatar">{{ username[0].upper() }}</div>
+                    <span>{{ username }}</span>
+                    <button class="logout-btn" onclick="window.location.href='{{ url_for('logout') }}'">
+                        <i class="fas fa-sign-out-alt"></i> 退出登录
+                    </button>
+                </div>
+            </nav>
+
+            <!-- 页面内容 -->
+            <div class="page-content">
+                <!-- 消息提示 -->
+                <div class="flash-messages">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="message {{ category }}">
+                                    <i class="fas {% if category == 'success' %}fa-check-circle{% else %}fa-exclamation-circle{% endif %}"></i>
+                                    <span>{{ message }}</span>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+                </div>
+
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h2 class="card-title">调用MOCK接口</h2>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="requestMethod">请求方法</label>
+                            <select class="form-control" id="requestMethod" onchange="updateRequestBodyVisibility()">
+                                <option value="GET">GET</option>
+                                <option value="POST">POST</option>
+                                <option value="PUT">PUT</option>
+                                <option value="DELETE">DELETE</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="requestUrl">请求URL</label>
+                            <input type="text" class="form-control" id="requestUrl"
+                                   placeholder="例如：/api/user" required>
+                            <small style="color: #5f6368; margin-top: 5px; display: block;">
+                                完整请求地址为：http://当前域名/mock+输入的路径
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="requestBodyGroup">
+                        <label class="form-label" for="requestBody">请求体 (JSON格式)</label>
+                        <textarea class="form-control" id="requestBody"
+                                  placeholder='例如：{"username": "test", "password": "123456"}'>
+{"username": "test", "password": "123456"}
+                        </textarea>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-outline" onclick="clearRequest()">清空</button>
+                        <button type="button" class="btn btn-primary" onclick="sendRequest()">
+                            <i class="fas fa-paper-plane"></i> 发送请求
+                        </button>
+                    </div>
+
+                    <!-- 响应结果区域 -->
+                    <div class="response-section">
+                        <div class="section-tabs">
+                            <div class="section-tab active" onclick="switchTab('responseTab')">响应结果</div>
+                            <div class="section-tab" onclick="switchTab('requestTab')">请求信息</div>
+                        </div>
+
+                        <div id="responseTab" class="section-content active">
+                            <div id="responseStatus" style="display: none;">
+                                <span class="status-code" id="statusCode"></span>
+                            </div>
+                            <div id="responseContent" class="code-block">
+                                发送请求后将显示响应结果...
+                            </div>
+                        </div>
+
+                        <div id="requestTab" class="section-content">
+                            <div class="code-block" id="requestDetails">
+                                发送请求后将显示请求详情...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 可用接口列表 -->
+                <div class="dashboard-card interfaces-list">
+                    <div class="card-header">
+                        <h2 class="card-title">可用的MOCK接口</h2>
+                        <span class="count-badge">共 {{ interfaces|length }} 个接口</span>
+                    </div>
+
+                    {% if interfaces %}
+                    <div class="interfaces-container">
+                        {% for interface in interfaces.values() %}
+                        <div class="interface-item"
+                             onclick="selectInterface('{{ interface.method }}', '{{ interface.path }}')">
+                            <div class="interface-header">
+                                <div class="interface-name">{{ interface.name }}</div>
+                                <span class="method-badge method-{{ interface.method|lower }}">
+                                    {{ interface.method }}
+                                </span>
+                            </div>
+                            <div class="interface-path">/mock{{ interface.path }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div style="text-align: center; padding: 40px 0; color: #5f6368;">
+                        <i class="fas fa-info-circle" style="font-size: 32px; margin-bottom: 15px;"></i>
+                        <p>暂无可用的MOCK接口，请先到<a href="{{ url_for('mock_config') }}" style="color: #1a73e8;">MOCK接口配置</a>页面创建</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // 存储接口数据
+        const mockInterfaces = {{ interfaces|tojson }};
+        let currentTab = 'responseTab';
+
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', function() {
+            // 根据当前URL自动填充基础URL
+            updateRequestBodyVisibility();
+        });
+
+        // 选择接口，自动填充表单
+        function selectInterface(method, path) {
+            document.getElementById('requestMethod').value = method;
+            document.getElementById('requestUrl').value = path;
+            updateRequestBodyVisibility();
+
+            // 高亮选中的接口
+            document.querySelectorAll('.interface-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+        }
+
+        // 发送请求
+        function sendRequest() {
+            const method = document.getElementById('requestMethod').value;
+            const url = document.getElementById('requestUrl').value;
+            const requestBody = document.getElementById('requestBody').value;
+
+            // 验证URL
+            if (!url) {
+                alert('请输入请求URL');
+                return;
+            }
+
+            // 构建完整URL
+            const fullUrl = `/mock${url.startsWith('/') ? '' : '/'}${url}`;
+
+            // 准备请求参数
+            const fetchOptions = {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            };
+
+            // 对于需要请求体的方法，添加请求体
+            if (['POST', 'PUT', 'DELETE'].includes(method)) {
+                try {
+                    // 验证JSON格式
+                    JSON.parse(requestBody);
+                    fetchOptions.body = requestBody;
+                } catch (e) {
+                    alert('请求体不是有效的JSON格式');
+                    return;
+                }
+            }
+
+            // 记录开始时间
+            const startTime = new Date().getTime();
+
+            // 发送请求
+            fetch(fullUrl, fetchOptions)
+                .then(response => {
+                    // 获取响应时间
+                    const responseTime = new Date().getTime() - startTime;
+
+                    // 保存状态码以便后续使用
+                    const statusCode = response.status;
+
+                    // 尝试解析JSON响应
+                    return response.text().then(text => {
+                        try {
+                            return {
+                                json: JSON.parse(text),
+                                text: text,
+                                status: statusCode,
+                                time: responseTime
+                            };
+                        } catch (e) {
+                            // 如果不是JSON，返回文本
+                            return {
+                                json: null,
+                                text: text,
+                                status: statusCode,
+                                time: responseTime
+                            };
+                        }
+                    });
+                })
+                .then(result => {
+                    // 显示响应结果
+                    document.getElementById('responseStatus').style.display = 'block';
+                    const statusElement = document.getElementById('statusCode');
+                    statusElement.textContent = `状态码: ${result.status} (${result.time}ms)`;
+
+                    // 根据状态码设置样式
+                    if (result.status >= 200 && result.status < 300) {
+                        statusElement.className = 'status-code status-success';
+                    } else {
+                        statusElement.className = 'status-code status-error';
+                    }
+
+                    // 格式化响应内容
+                    const responseContent = document.getElementById('responseContent');
+                    if (result.json) {
+                        responseContent.textContent = JSON.stringify(result.json, null, 2);
+                    } else {
+                        responseContent.textContent = result.text;
+                    }
+
+                    // 显示请求详情
+                    const requestDetails = document.getElementById('requestDetails');
+                    const details = `请求方法: ${method}
+请求URL: ${window.location.origin}${fullUrl}
+请求时间: ${new Date().toLocaleString()}
+响应时间: ${result.time}ms
+Content-Type: application/json
+
+${['POST', 'PUT', 'DELETE'].includes(method) ? '请求体:\n' + JSON.stringify(JSON.parse(requestBody), null, 2) : '无请求体'}`;
+                    requestDetails.textContent = details;
+
+                    // 切换到响应标签
+                    switchTab('responseTab');
+                })
+                .catch(error => {
+                    document.getElementById('responseStatus').style.display = 'block';
+                    document.getElementById('statusCode').textContent = '请求失败';
+                    document.getElementById('statusCode').className = 'status-code status-error';
+                    document.getElementById('responseContent').textContent = `错误信息: ${error.message}`;
+                });
+        }
+
+        // 清空请求表单
+        function clearRequest() {
+            document.getElementById('requestUrl').value = '';
+            document.getElementById('requestBody').value = '{"username": "test", "password": "123456"}';
+            document.getElementById('responseStatus').style.display = 'none';
+            document.getElementById('responseContent').textContent = '发送请求后将显示响应结果...';
+            document.getElementById('requestDetails').textContent = '发送请求后将显示请求详情...';
+
+            // 移除所有选中状态
+            document.querySelectorAll('.interface-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+        }
+
+        // 切换标签页
+        function switchTab(tabId) {
+            // 隐藏所有标签内容
+            document.querySelectorAll('.section-content').forEach(content => {
+                content.classList.remove('active');
+            });
+
+            // 移除所有标签的active类
+            document.querySelectorAll('.section-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // 显示选中的标签内容和激活标签
+            document.getElementById(tabId).classList.add('active');
+            document.querySelector(`.section-tab[onclick="switchTab('${tabId}')"]`).classList.add('active');
+            currentTab = tabId;
+        }
+
+        // 根据请求方法显示/隐藏请求体
+        function updateRequestBodyVisibility() {
+            const method = document.getElementById('requestMethod').value;
+            const bodyGroup = document.getElementById('requestBodyGroup');
+
+            // GET方法通常没有请求体，隐藏请求体区域
+            if (method === 'GET') {
+                bodyGroup.style.display = 'none';
+            } else {
+                bodyGroup.style.display = 'block';
+            }
+        }
+
+        // 为当前菜单添加active类
+        document.querySelectorAll('.menu-link').forEach(link => {
+            if (link.getAttribute('href') === window.location.pathname) {
+                link.classList.add('active');
+            }
+        });
+    </script>
+</body>
+</html>

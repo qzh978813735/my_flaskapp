@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>增加/禁用用户 - 用户管理</title>
+</head>
+<body>
+    {% extends "user_management_base.html" %}
+
+    {% block content %}
+    <!-- 添加新用户 -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">添加新用户</h2>
+        </div>
+        <div class="card-body">
+            <form method="post" id="addUserForm">
+                <input type="hidden" name="action" value="add">
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="username">用户名</label>
+                        <input type="text" class="form-control" id="username" name="username"
+                               placeholder="输入用户名" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="name">姓名</label>
+                        <input type="text" class="form-control" id="name" name="name"
+                               placeholder="输入姓名" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="password">初始密码</label>
+                        <input type="password" class="form-control" id="password" name="password"
+                               placeholder="输入初始密码" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="role">角色</label>
+                        <select class="form-select" id="role" name="role" required>
+                            <option value="operator">操作员</option>
+                            <option value="viewer">查看者</option>
+                            <option value="admin">超级管理员</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" {% if current_user_role != 'admin' %}disabled title="只有超级管理员可以添加用户"{% endif %}>
+                        <i class="fas fa-plus"></i> 添加用户
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 用户列表（用于禁用/启用） -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">用户状态管理</h2>
+            <span>启用/禁用用户账号</span>
+        </div>
+        <div class="card-body">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>序号</th>
+                        <th>用户名</th>
+                        <th>姓名</th>
+                        <th>角色</th>
+                        <th>状态</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user_id, user_info in users.items() %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ user_id }}</td>
+                        <td>{{ user_info.name }}</td>
+                        <td>
+                            <span class="role-badge role-{{ user_info.role }}">
+                                {% if user_info.role == 'admin' %}超级管理员{% elif user_info.role == 'operator' %}操作员{% else %}查看者{% endif %}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="status-badge {% if user_info.status == 'active' %}status-active{% else %}status-disabled{% endif %}">
+                                {{ '已激活' if user_info.status == 'active' else '已禁用' }}
+                            </span>
+                        </td>
+                        <td>{{ user_info.create_time }}</td>
+                        <td>
+                            <form method="post" class="status-form" style="display:inline;">
+                                <input type="hidden" name="action" value="toggle_status">
+                                <input type="hidden" name="username" value="{{ user_id }}">
+                                <button type="submit" class="btn {% if user_info.status == 'active' %}btn-danger{% else %}btn-success{% endif %}"
+                                        {% if user_id == 'admin' or current_user_role != 'admin' %}disabled{% endif %}>
+                                    {% if user_info.status == 'active' %}
+                                    <i class="fas fa-ban"></i> 禁用
+                                    {% else %}
+                                    <i class="fas fa-check"></i> 启用
+                                    {% endif %}
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // 确认操作
+        document.addEventListener('DOMContentLoaded', function() {
+            // 非管理员提交表单时的提示
+            {% if current_user_role != 'admin' %}
+            document.getElementById('addUserForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                alert('只有超级管理员可以添加用户');
+            });
+            {% endif %}
+
+            // 状态切换确认
+            document.querySelectorAll('.status-form').forEach(form => {
+                form.addEventListener('submit', function(e) {
+                    const username = this.querySelector('input[name="username"]').value;
+                    const action = this.querySelector('button').textContent.trim();
+
+                    if (!confirm(`确定要${action}用户 ${username} 吗？`)) {
+                        e.preventDefault();
+                    }
+                });
+            });
+        });
+    </script>
+    {% endblock %}
+</body>
+</html>

@@ -1,0 +1,280 @@
+{% extends "execution_plan/base.html" %}
+
+{% block content %}
+<!-- 计划配置页面 -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">执行计划配置</h2>
+        <button class="btn btn-primary" onclick="showModal('addPlanModal')">
+            <i class="fas fa-plus"></i> 新增计划
+        </button>
+    </div>
+    <div class="card-body">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>计划名称</th>
+                    <th>执行类型</th>
+                    <th>执行频率</th>
+                    <th>关联任务</th>
+                    <th>状态</th>
+                    <th>创建时间</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if plans %}
+                    {% for plan in plans %}
+                    <tr>
+                        <td>{{ plan.name }}</td>
+                        <td>{{ '定时执行' if plan.type == 'scheduled' else '手动执行' }}</td>
+                        <td>
+                            {% if plan.type == 'scheduled' %}
+                                {{
+                                    '每天 ' + plan.schedule.time if plan.schedule.frequency == 'daily' else
+                                    '每周' + ['一', '二', '三', '四', '五', '六', '日'][plan.schedule.day_of_week|int - 1] + ' ' + plan.schedule.time if plan.schedule.frequency == 'weekly' else
+                                    '每月' + plan.schedule.day_of_month + '日 ' + plan.schedule.time
+                                }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{{ plan.tasks|length }} 个任务</td>
+                        <td>
+                            <span class="status-badge {{ 'status-active' if plan.status == 'active' else 'status-inactive' }}">
+                                {{ '启用' if plan.status == 'active' else '禁用' }}
+                            </span>
+                        </td>
+                        <td>{{ plan.created_at }}</td>
+                        <td>
+                            <button class="btn btn-outline btn-sm" onclick="editPlan('{{ plan.id }}')">
+                                <i class="fas fa-edit"></i> 编辑
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="deletePlan('{{ plan.id }}', '{{ plan.name }}')">
+                                <i class="fas fa-trash"></i> 删除
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="7" style="text-align: center; padding: 30px;">
+                            <i class="fas fa-calendar-alt" style="font-size: 32px; color: #ddd; margin-bottom: 10px;"></i>
+                            <p>暂无执行计划，请点击"新增计划"创建</p>
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 新增/编辑计划模态框 -->
+<div class="modal-backdrop" id="addPlanModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 class="modal-title" id="planModalTitle">新增执行计划</h3>
+            <button class="modal-close" onclick="hideModal('addPlanModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="planForm" method="post">
+                <input type="hidden" name="action" id="planAction" value="add">
+                <input type="hidden" name="plan_id" id="planId">
+
+                <div class="form-group">
+                    <label class="form-label" for="plan_name">计划名称 <span style="color: #d93025;">*</span></label>
+                    <input type="text" class="form-control" id="plan_name" name="plan_name" placeholder="请输入执行计划名称" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="description">计划描述</label>
+                    <textarea class="form-control" id="description" name="description" rows="3" placeholder="请输入执行计划描述"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="execution_type">执行类型 <span style="color: #d93025;">*</span></label>
+                    <select class="form-select" id="execution_type" name="execution_type" required onchange="toggleScheduleFields()">
+                        <option value="manual">手动执行</option>
+                        <option value="scheduled">定时执行</option>
+                    </select>
+                </div>
+
+                <!-- 定时执行配置区域 -->
+                <div id="scheduleFields" style="display: none;">
+                    <div class="form-group">
+                        <label class="form-label" for="frequency">执行频率 <span style="color: #d93025;">*</span></label>
+                        <select class="form-select" id="frequency" name="frequency" onchange="toggleFrequencyFields()">
+                            <option value="daily">每天</option>
+                            <option value="weekly">每周</option>
+                            <option value="monthly">每月</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="execution_time">执行时间 <span style="color: #d93025;">*</span></label>
+                        <input type="time" class="form-control" id="execution_time" name="execution_time" required>
+                    </div>
+
+                    <div id="weeklyFields" style="display: none;">
+                        <div class="form-group">
+                            <label class="form-label" for="day_of_week">星期几 <span style="color: #d93025;">*</span></label>
+                            <select class="form-select" id="day_of_week" name="day_of_week">
+                                <option value="1">星期一</option>
+                                <option value="2">星期二</option>
+                                <option value="3">星期三</option>
+                                <option value="4">星期四</option>
+                                <option value="5">星期五</option>
+                                <option value="6">星期六</option>
+                                <option value="7">星期日</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="monthlyFields" style="display: none;">
+                        <div class="form-group">
+                            <label class="form-label" for="day_of_month">每月几号 <span style="color: #d93025;">*</span></label>
+                            <input type="number" class="form-control" id="day_of_month" name="day_of_month" min="1" max="31" value="1">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">关联测试任务 <span style="color: #d93025;">*</span></label>
+                    <div id="taskCheckboxes">
+                        {% for task in test_tasks %}
+                        <div class="checkbox-group">
+                            <input type="checkbox" class="form-checkbox" id="task_{{ task.id }}" name="tasks[]" value="{{ task.id }}">
+                            <label for="task_{{ task.id }}">{{ task.name }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" class="form-checkbox" id="status" name="status" checked>
+                        <label for="status">启用计划</label>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="hideModal('addPlanModal')">取消</button>
+            <button class="btn btn-primary" onclick="document.getElementById('planForm').submit()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 删除确认模态框 -->
+<div class="modal-backdrop" id="deleteConfirmModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 class="modal-title">确认删除</h3>
+            <button class="modal-close" onclick="hideModal('deleteConfirmModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p>确定要删除执行计划 "<span id="deletePlanName" style="font-weight: 600;"></span>" 吗？此操作不可撤销。</p>
+            <form id="deleteForm" method="post">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="plan_id" id="deletePlanId">
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="hideModal('deleteConfirmModal')">取消</button>
+            <button class="btn btn-danger" onclick="document.getElementById('deleteForm').submit()">确认删除</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 执行计划数据
+    const plans = {{ plans|tojson }};
+    const testTasks = {{ test_tasks|tojson }};
+
+    // 切换定时执行配置显示
+    function toggleScheduleFields() {
+        const executionType = document.getElementById('execution_type').value;
+        const scheduleFields = document.getElementById('scheduleFields');
+
+        if (executionType === 'scheduled') {
+            scheduleFields.style.display = 'block';
+            toggleFrequencyFields(); // 触发一次频率字段显示
+        } else {
+            scheduleFields.style.display = 'none';
+        }
+    }
+
+    // 切换频率相关字段显示
+    function toggleFrequencyFields() {
+        const frequency = document.getElementById('frequency').value;
+        const weeklyFields = document.getElementById('weeklyFields');
+        const monthlyFields = document.getElementById('monthlyFields');
+
+        weeklyFields.style.display = 'none';
+        monthlyFields.style.display = 'none';
+
+        if (frequency === 'weekly') {
+            weeklyFields.style.display = 'block';
+        } else if (frequency === 'monthly') {
+            monthlyFields.style.display = 'block';
+        }
+    }
+
+    // 编辑计划
+    function editPlan(planId) {
+        const plan = plans.find(p => p.id === planId);
+        if (!plan) return;
+
+        // 填充表单数据
+        document.getElementById('planModalTitle').textContent = '编辑执行计划';
+        document.getElementById('planAction').value = 'edit';
+        document.getElementById('planId').value = plan.id;
+        document.getElementById('plan_name').value = plan.name;
+        document.getElementById('description').value = plan.description || '';
+        document.getElementById('execution_type').value = plan.type;
+
+        // 处理定时配置
+        toggleScheduleFields();
+        if (plan.type === 'scheduled') {
+            document.getElementById('frequency').value = plan.schedule.frequency;
+            document.getElementById('execution_time').value = plan.schedule.time;
+
+            toggleFrequencyFields();
+            if (plan.schedule.frequency === 'weekly') {
+                document.getElementById('day_of_week').value = plan.schedule.day_of_week;
+            } else if (plan.schedule.frequency === 'monthly') {
+                document.getElementById('day_of_month').value = plan.schedule.day_of_month;
+            }
+        }
+
+        // 处理任务选择
+        document.querySelectorAll('input[name="tasks[]"]').forEach(checkbox => {
+            checkbox.checked = plan.tasks.includes(checkbox.value);
+        });
+
+        // 处理状态
+        document.getElementById('status').checked = plan.status === 'active';
+
+        // 显示模态框
+        showModal('addPlanModal');
+    }
+
+    // 删除计划
+    function deletePlan(planId, planName) {
+        document.getElementById('deletePlanId').value = planId;
+        document.getElementById('deletePlanName').textContent = planName;
+        showModal('deleteConfirmModal');
+    }
+
+    // 页面加载完成后初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        // 初始化任务复选框的样式
+        document.querySelectorAll('.checkbox-group').forEach(group => {
+            group.style.display = 'flex';
+            group.style.alignItems = 'center';
+            group.style.gap = '8px';
+            group.style.marginBottom = '10px';
+        });
+    });
+</script>
+{% endblock %}

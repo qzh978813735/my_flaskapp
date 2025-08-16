@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>权限管理 - 用户管理</title>
+</head>
+<body>
+    {% extends "user_management_base.html" %}
+
+    {% block content %}
+    <!-- 权限管理 -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">角色权限配置</h2>
+            <span class="hint">配置不同角色可访问的功能模块</span>
+        </div>
+        <div class="card-body">
+            <form method="post" id="permissionForm">
+                <div class="form-group">
+                    <label class="form-label" for="role">选择角色</label>
+                    <select class="form-select" id="role" name="role" required onchange="updatePermissionCheckboxes(this.value)">
+                        <option value="">-- 请选择角色 --</option>
+                        {% for role in roles %}
+                        <option value="{{ role }}">
+                            {% if role == 'admin' %}超级管理员{% elif role == 'operator' %}操作员{% else %}查看者{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="permission-group">
+                    <div class="permission-group-title">功能权限</div>
+                    <div class="permission-items" id="permissionItems">
+                        {% for permission in all_permissions %}
+                        <div class="permission-item">
+                            <input type="checkbox" class="form-checkbox" id="perm_{{ permission }}"
+                                   name="permissions[]" value="{{ permission }}">
+                            <label for="perm_{{ permission }}">
+                                {% if permission == 'user_management' %}用户管理
+                                {% elif permission == 'email_config' %}邮件配置
+                                {% elif permission == 'mock_data' %}MOCK数据
+                                {% elif permission == 'api_test' %}接口测试
+                                {% elif permission == 'execution_plan' %}执行计划
+                                {% elif permission == 'permission_management' %}权限管理
+                                {% endif %}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> 保存权限配置
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 权限对照表 -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">角色权限对照表</h2>
+        </div>
+        <div class="card-body">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>功能模块</th>
+                        <th>超级管理员</th>
+                        <th>操作员</th>
+                        <th>查看者</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for permission in all_permissions %}
+                    <tr>
+                        <td>
+                            {% if permission == 'user_management' %}用户管理
+                            {% elif permission == 'email_config' %}邮件配置
+                            {% elif permission == 'mock_data' %}MOCK数据
+                            {% elif permission == 'api_test' %}接口测试
+                            {% elif permission == 'execution_plan' %}执行计划
+                            {% elif permission == 'permission_management' %}权限管理
+                            {% endif %}
+                        </td>
+                        <td>{% if permission in role_permissions.admin %}<i class="fas fa-check text-green-500"></i>{% else %}<i class="fas fa-times text-red-500"></i>{% endif %}</td>
+                        <td>{% if permission in role_permissions.operator %}<i class="fas fa-check text-green-500"></i>{% else %}<i class="fas fa-times text-red-500"></i>{% endif %}</td>
+                        <td>{% if permission in role_permissions.viewer %}<i class="fas fa-check text-green-500"></i>{% else %}<i class="fas fa-times text-red-500"></i>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // 角色权限数据
+        const rolePermissions = {{ role_permissions|tojson }};
+
+        // 更新选中的权限复选框
+        function updatePermissionCheckboxes(role) {
+            // 先取消所有选中
+            document.querySelectorAll('input[name="permissions[]"]').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+
+            // 如果选择了角色，选中对应的权限
+            if (role && rolePermissions[role]) {
+                rolePermissions[role].forEach(permission => {
+                    const checkbox = document.getElementById(`perm_${permission}`);
+                    if (checkbox) checkbox.checked = true;
+                });
+            }
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 为表单提交添加确认
+            document.getElementById('permissionForm').addEventListener('submit', function(e) {
+                const role = document.getElementById('role').value;
+                if (!role) {
+                    alert('请选择角色');
+                    e.preventDefault();
+                    return;
+                }
+
+                if (!confirm(`确定要更新 ${role} 角色的权限配置吗？`)) {
+                    e.preventDefault();
+                }
+            });
+        });
+    </script>
+    {% endblock %}
+</body>
+</html>
