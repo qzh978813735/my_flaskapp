@@ -177,6 +177,12 @@
             color: #5f6368;
         }
 
+        .error-message {
+            color: #d93025;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
         .checkbox-group {
             display: flex;
             align-items: center;
@@ -338,11 +344,14 @@
                     </div>
                     <div class="card-body">
                         <form method="post">
+                            <!-- 添加CSRF令牌 -->
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
                             <div class="form-grid">
                                 <div class="form-group">
                                     <label class="form-label" for="smtp_server">SMTP 服务器地址</label>
                                     <input type="text" class="form-control" id="smtp_server"
-                                           name="smtp_server" value="{{ config.smtp_server }}"
+                                           name="smtp_server" value="{{ config.smtp_server or '' }}"
                                            placeholder="例如：smtp.qq.com 或 smtp.gmail.com" required>
                                     <div class="form-hint">请输入邮件服务器的SMTP地址</div>
                                 </div>
@@ -350,22 +359,22 @@
                                 <div class="form-group">
                                     <label class="form-label" for="smtp_port">SMTP 端口</label>
                                     <input type="number" class="form-control" id="smtp_port"
-                                           name="smtp_port" value="{{ config.smtp_port }}"
-                                           placeholder="例如：587 或 465" required>
+                                           name="smtp_port" value="{{ config.smtp_port or '' }}"
+                                           placeholder="例如：587 或 465" required min="1" max="65535">
                                     <div class="form-hint">常用端口：587(推荐)、465(SSL)、25</div>
                                 </div>
 
                                 <div class="form-group">
                                     <label class="form-label" for="smtp_username">SMTP 用户名</label>
                                     <input type="text" class="form-control" id="smtp_username"
-                                           name="smtp_username" value="{{ config.smtp_username }}"
+                                           name="smtp_username" value="{{ config.smtp_username or '' }}"
                                            placeholder="通常为发件人邮箱地址">
                                 </div>
 
                                 <div class="form-group">
                                     <label class="form-label" for="smtp_password">SMTP 密码/授权码</label>
                                     <input type="password" class="form-control" id="smtp_password"
-                                           name="smtp_password" value="{{ config.smtp_password }}"
+                                           name="smtp_password" value="{{ config.smtp_password or '' }}"
                                            placeholder="邮箱密码或授权码">
                                     <div class="form-hint">部分邮箱需要使用独立的应用授权码</div>
                                 </div>
@@ -373,32 +382,19 @@
                                 <div class="form-group">
                                     <label class="form-label" for="sender_email">发件人邮箱地址</label>
                                     <input type="email" class="form-control" id="sender_email"
-                                           name="sender_email" value="{{ config.sender_email }}"
-                                           placeholder="例如：test@example.com" required>
+                                           name="sender_email" value="{{ config.sender_email or '' }}"
+                                           placeholder="例如：notifications@example.com" required>
                                 </div>
 
                                 <div class="form-group">
-                                    <label class="form-label" for="timeout">超时时间(秒)</label>
-                                    <input type="number" class="form-control" id="timeout"
-                                           name="timeout" value="{{ config.timeout }}"
-                                           min="5" max="300" required>
-                                    <div class="form-hint">设置邮件发送的超时时间，默认30秒</div>
+                                    <label class="form-label">加密方式</label>
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" class="form-checkbox" id="use_tls"
+                                               name="use_tls" {% if config.use_tls %}checked{% endif %}>
+                                        <label for="use_tls">使用 TLS 加密（推荐）</label>
+                                    </div>
+                                    <div class="form-hint">通常587端口使用TLS，465端口使用SSL</div>
                                 </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label class="form-label">加密方式</label>
-                                <div class="checkbox-group">
-                                    <input type="checkbox" class="form-checkbox" id="use_ssl"
-                                           name="use_ssl" {% if config.use_ssl %}checked{% endif %}>
-                                    <label for="use_ssl">使用 SSL 加密</label>
-                                </div>
-                                <div class="checkbox-group">
-                                    <input type="checkbox" class="form-checkbox" id="use_tls"
-                                           name="use_tls" {% if config.use_tls %}checked{% endif %}>
-                                    <label for="use_tls">使用 TLS 加密（推荐）</label>
-                                </div>
-                                <div class="form-hint">通常587端口使用TLS，465端口使用SSL</div>
                             </div>
 
                             <div class="form-actions">
@@ -412,10 +408,14 @@
                         <div class="test-section">
                             <h3>测试邮件配置</h3>
                             <form id="testForm" onsubmit="testEmailSend(event)">
+                                <!-- 添加CSRF令牌到测试表单 -->
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
                                 <div class="form-group">
                                     <label class="form-label" for="test_email">接收测试邮件的邮箱</label>
                                     <input type="email" class="form-control" id="test_email"
                                            placeholder="请输入接收测试邮件的邮箱地址" required>
+                                    <div id="emailError" class="error-message"></div>
                                 </div>
                                 <button type="submit" class="btn btn-outline">
                                     <i class="fas fa-paper-plane"></i> 发送测试邮件
@@ -430,15 +430,31 @@
     </div>
 
     <script>
+        // 邮箱格式验证
+        function validateEmail(email) {
+            const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return re.test(email);
+        }
+
         // 发送测试邮件
         function testEmailSend(event) {
             event.preventDefault();
 
             const testEmail = document.getElementById('test_email').value;
             const resultDiv = document.getElementById('testResult');
+            const emailError = document.getElementById('emailError');
+            const csrfToken = document.querySelector('#testForm input[name="csrf_token"]').value;
 
+            // 清空之前的错误信息
+            emailError.textContent = '';
+
+            // 前端验证
             if (!testEmail) {
-                resultDiv.innerHTML = '<div class="message error"><i class="fas fa-exclamation-circle"></i><span>请输入接收测试邮件的邮箱地址</span></div>';
+                emailError.textContent = '请输入接收测试邮件的邮箱地址';
+                return;
+            }
+            if (!validateEmail(testEmail)) {
+                emailError.textContent = '请输入有效的邮箱地址';
                 return;
             }
 
@@ -451,30 +467,22 @@
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: `test_email=${encodeURIComponent(testEmail)}`
+                body: `test_email=${encodeURIComponent(testEmail)}&csrf_token=${encodeURIComponent(csrfToken)}`
             })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    resultDiv.innerHTML = `<div class="message success"><i class="fas fa-check-circle"></i><span>${data.message}</span></div>`;
+                    resultDiv.innerHTML = '<div class="message success"><i class="fas fa-check-circle"></i><span>测试邮件发送成功，请查收</span></div>';
+                    // 清空输入框
+                    document.getElementById('test_email').value = '';
                 } else {
-                    resultDiv.innerHTML = `<div class="message error"><i class="fas fa-exclamation-circle"></i><span>${data.message}</span></div>`;
+                    resultDiv.innerHTML = `<div class="message error"><i class="fas fa-exclamation-circle"></i><span>发送失败：${data.message || '未知错误'}</span></div>`;
                 }
             })
             .catch(error => {
-                resultDiv.innerHTML = `<div class="message error"><i class="fas fa-exclamation-circle"></i><span>请求失败：${error.message}</span></div>`;
+                resultDiv.innerHTML = '<div class="message error"><i class="fas fa-exclamation-circle"></i><span>请求失败，请检查网络连接</span></div>';
             });
         }
-
-        // 页面加载时设置激活状态
-        document.addEventListener('DOMContentLoaded', function() {
-            // 高亮当前子菜单
-            document.querySelectorAll('.submenu-item').forEach(item => {
-                if (item.getAttribute('href') === window.location.pathname) {
-                    item.classList.add('active');
-                }
-            });
-        });
     </script>
 </body>
 </html>

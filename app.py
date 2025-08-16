@@ -3,6 +3,20 @@ import os
 import uuid,time
 from datetime import datetime
 import hashlib  # 用于密码加密
+# 现有代码中使用全局变量存储数据（如test_environments、database_configs等）
+# 在多线程环境下存在风险，临时添加线程锁避免竞态条件
+import threading
+from flask import Flask
+from flask_wtf.csrf import CSRFProtect
+
+app = Flask(__name__)
+app.secret_key = 'your-secret-key-here'  # 必须设置密钥
+csrf = CSRFProtect(app)  # 启用CSRF保护
+
+
+
+# 在全局变量定义处添加锁
+data_lock = threading.Lock()
 
 # 初始化Flask应用
 app = Flask(__name__)
@@ -716,71 +730,191 @@ def execution_plan():
 
 
 # 1. 计划配置页面
+# @app.route('/execution_plan/config', methods=['GET', 'POST'])
+# @login_required
+# def plan_config():
+#     global execution_plans
+#
+#     if request.method == 'POST':
+#         action = request.form.get('action')
+#
+#         if action == 'add':
+#             # 添加新计划
+#             plan_id = str(uuid.uuid4())[:8]
+#             new_plan = {
+#                 'id': plan_id,
+#                 'name': request.form.get('plan_name'),
+#                 'description': request.form.get('description'),
+#                 'type': request.form.get('execution_type'),  # manual 或 scheduled
+#                 'schedule': {
+#                     'frequency': request.form.get('frequency'),  # daily, weekly, monthly
+#                     'time': request.form.get('execution_time'),
+#                     'day_of_week': request.form.get('day_of_week'),
+#                     'day_of_month': request.form.get('day_of_month')
+#                 },
+#                 'tasks': request.form.getlist('tasks[]'),  # 关联的测试任务
+#                 'status': 'active' if request.form.get('status') == 'on' else 'inactive',
+#                 'created_by': session['username'],
+#                 'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+#                 'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+#             }
+#             execution_plans.append(new_plan)
+#             flash(f'执行计划 "{new_plan["name"]}" 创建成功', 'success')
+#             return redirect(url_for('plan_config'))
+#
+#         elif action == 'edit':
+#             # 编辑计划
+#             plan_id = request.form.get('plan_id')
+#             for plan in execution_plans:
+#                 if plan['id'] == plan_id:
+#                     plan['name'] = request.form.get('plan_name')
+#                     plan['description'] = request.form.get('description')
+#                     plan['type'] = request.form.get('execution_type')
+#                     plan['schedule'] = {
+#                         'frequency': request.form.get('frequency'),
+#                         'time': request.form.get('execution_time'),
+#                         'day_of_week': request.form.get('day_of_week'),
+#                         'day_of_month': request.form.get('day_of_month')
+#                     }
+#                     plan['tasks'] = request.form.getlist('tasks[]')
+#                     plan['status'] = 'active' if request.form.get('status') == 'on' else 'inactive',
+#                     plan['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+#                     flash(f'执行计划 "{plan["name"]}" 更新成功', 'success')
+#                     return redirect(url_for('plan_config'))
+#             flash('未找到指定的执行计划', 'error')
+#             return redirect(url_for('plan_config'))
+#
+#         elif action == 'delete':
+#             # 删除计划
+#             # plan_id = request.form.get('plan_id')
+#             # global execution_plans
+#             # execution_plans = [p for p in execution_plans if p['id'] != plan_id]
+#             # flash('执行计划已删除', 'success')
+#             # return redirect(url_for('plan_config'))
+#             # 删除计划 - 修复全局变量声明顺序
+#             plan_id = request.form.get('plan_id')
+#
+#             execution_plans = [p for p in execution_plans if p['id'] != plan_id]
+#             flash('执行计划已删除', 'success')
+#             return redirect(url_for('plan_config'))
+#
+#     # 模拟测试任务数据（实际项目中应从数据库获取）
+#     test_tasks = [
+#         {'id': 'task1', 'name': 'API基础功能测试'},
+#         {'id': 'task2', 'name': '支付接口测试'},
+#         {'id': 'task3', 'name': '用户认证流程测试'},
+#         {'id': 'task4', 'name': '数据同步测试'}
+#     ]
+#
+#     return render_template('execution_plan/config.html',
+#                            username=session['name'],
+#                            plans=execution_plans,
+#                            test_tasks=test_tasks)
+
+
+# 2. 计划执行页面
+
+# 1. 计划配置页面
 @app.route('/execution_plan/config', methods=['GET', 'POST'])
 @login_required
 def plan_config():
     global execution_plans
+    # 添加线程锁（全局变量线程安全处理）
+    import threading
+    data_lock = threading.Lock()
 
     if request.method == 'POST':
+        # 添加CSRF验证（需先在app初始化时配置CSRFProtect）
+        from flask_wtf.csrf import validate_csrf
+        from wtforms import ValidationError
+        try:
+            validate_csrf(request.form.get('csrf_token'))
+        except ValidationError:
+            flash('表单验证失败，请刷新页面重试', 'error')
+            return redirect(url_for('plan_config'))
+
         action = request.form.get('action')
 
         if action == 'add':
-            # 添加新计划
-            plan_id = str(uuid.uuid4())[:8]
-            new_plan = {
-                'id': plan_id,
-                'name': request.form.get('plan_name'),
-                'description': request.form.get('description'),
-                'type': request.form.get('execution_type'),  # manual 或 scheduled
-                'schedule': {
-                    'frequency': request.form.get('frequency'),  # daily, weekly, monthly
-                    'time': request.form.get('execution_time'),
-                    'day_of_week': request.form.get('day_of_week'),
-                    'day_of_month': request.form.get('day_of_month')
-                },
-                'tasks': request.form.getlist('tasks[]'),  # 关联的测试任务
-                'status': 'active' if request.form.get('status') == 'on' else 'inactive',
-                'created_by': session['username'],
-                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-            execution_plans.append(new_plan)
+            # 输入验证
+            plan_name = request.form.get('plan_name')
+            execution_type = request.form.get('execution_type')
+            tasks = request.form.getlist('tasks[]')
+
+            if not plan_name or len(plan_name) > 50:
+                flash('计划名称不能为空且长度不能超过50字符', 'error')
+                return redirect(url_for('plan_config'))
+            if not execution_type:
+                flash('请选择执行类型', 'error')
+                return redirect(url_for('plan_config'))
+            if not tasks:
+                flash('至少需要关联一个测试任务', 'error')
+                return redirect(url_for('plan_config'))
+
+            # 添加新计划（加锁保护）
+            with data_lock:
+                plan_id = str(uuid.uuid4())[:8]
+                new_plan = {
+                    'id': plan_id,
+                    'name': plan_name,
+                    'description': request.form.get('description') or '',
+                    'type': execution_type,  # manual 或 scheduled
+                    'schedule': {
+                        'frequency': request.form.get('frequency') or '',
+                        'time': request.form.get('execution_time') or '',
+                        'day_of_week': request.form.get('day_of_week') or '',
+                        'day_of_month': request.form.get('day_of_month') or ''
+                    },
+                    'tasks': tasks,
+                    'status': 'active' if request.form.get('status') == 'on' else 'inactive',
+                    'created_by': session['username'],
+                    'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+                execution_plans.append(new_plan)
             flash(f'执行计划 "{new_plan["name"]}" 创建成功', 'success')
             return redirect(url_for('plan_config'))
 
+
         elif action == 'edit':
-            # 编辑计划
+            # 输入验证
             plan_id = request.form.get('plan_id')
-            for plan in execution_plans:
-                if plan['id'] == plan_id:
-                    plan['name'] = request.form.get('plan_name')
-                    plan['description'] = request.form.get('description')
-                    plan['type'] = request.form.get('execution_type')
-                    plan['schedule'] = {
-                        'frequency': request.form.get('frequency'),
-                        'time': request.form.get('execution_time'),
-                        'day_of_week': request.form.get('day_of_week'),
-                        'day_of_month': request.form.get('day_of_month')
-                    }
-                    plan['tasks'] = request.form.getlist('tasks[]')
-                    plan['status'] = 'active' if request.form.get('status') == 'on' else 'inactive',
-                    plan['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    flash(f'执行计划 "{plan["name"]}" 更新成功', 'success')
-                    return redirect(url_for('plan_config'))
+            plan_name = request.form.get('plan_name')
+            if not plan_id or not plan_name or len(plan_name) > 50:
+                flash('计划ID不存在或名称格式错误', 'error')
+                return redirect(url_for('plan_config'))
+
+            # 编辑计划（加锁保护）
+            with data_lock:
+                for plan in execution_plans:
+                    if plan['id'] == plan_id:
+                        plan['name'] = plan_name
+                        plan['description'] = request.form.get('description') or '',
+                        plan['type'] = request.form.get('execution_type') or '',
+                        plan['schedule'] = {
+                            'frequency': request.form.get('frequency') or '',
+                            'time': request.form.get('execution_time') or '',
+                            'day_of_week': request.form.get('day_of_week') or '',
+                            'day_of_month': request.form.get('day_of_month') or ''
+                        },
+                        plan['tasks'] = request.form.getlist('tasks[]') or [],
+                        plan['status'] = 'active' if request.form.get('status') == 'on' else 'inactive',
+                        plan['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        flash(f'执行计划 "{plan["name"]}" 更新成功', 'success')
+                        return redirect(url_for('plan_config'))
             flash('未找到指定的执行计划', 'error')
             return redirect(url_for('plan_config'))
 
         elif action == 'delete':
-            # 删除计划
-            # plan_id = request.form.get('plan_id')
-            # global execution_plans
-            # execution_plans = [p for p in execution_plans if p['id'] != plan_id]
-            # flash('执行计划已删除', 'success')
-            # return redirect(url_for('plan_config'))
-            # 删除计划 - 修复全局变量声明顺序
+            # 删除计划（加锁保护）
             plan_id = request.form.get('plan_id')
+            if not plan_id:
+                flash('计划ID不能为空', 'error')
+                return redirect(url_for('plan_config'))
 
-            execution_plans = [p for p in execution_plans if p['id'] != plan_id]
+            with data_lock:
+
+                execution_plans = [p for p in execution_plans if p['id'] != plan_id]
             flash('执行计划已删除', 'success')
             return redirect(url_for('plan_config'))
 
@@ -796,9 +930,6 @@ def plan_config():
                            username=session['name'],
                            plans=execution_plans,
                            test_tasks=test_tasks)
-
-
-# 2. 计划执行页面
 @app.route('/execution_plan/execution', methods=['GET', 'POST'])
 @login_required
 def plan_execution():

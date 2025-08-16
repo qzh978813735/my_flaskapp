@@ -16,6 +16,9 @@
         </div>
         <div class="card-body">
             <form method="post" id="permissionChangeForm">
+                <!-- 添加CSRF令牌 -->
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
                 <div class="form-grid">
                     <div class="form-group">
                         <label class="form-label" for="username">选择用户</label>
@@ -89,15 +92,43 @@
     </div>
 
     <script>
-        // 如果不是超级管理员，显示提示
+        // 权限控制增强
         document.addEventListener('DOMContentLoaded', function() {
-            {% if current_user_role != 'admin' %}
-            const submitBtn = document.querySelector('#permissionChangeForm button[type="submit"]');
-            submitBtn.addEventListener('click', function(e) {
-                e.preventDefault();
-                alert('只有超级管理员可以修改用户权限');
+            const isAdmin = "{{ current_user_role }}" === "admin";
+            const usernameSelect = document.getElementById('username');
+            const roleSelect = document.getElementById('role');
+            const form = document.getElementById('permissionChangeForm');
+
+            // 非管理员禁用表单并添加提示
+            if (!isAdmin) {
+                usernameSelect.disabled = true;
+                roleSelect.disabled = true;
+
+                // 添加视觉提示
+                const hint = document.createElement('div');
+                hint.className = 'error-message';
+                hint.innerHTML = '<i class="fas fa-info-circle"></i> 只有超级管理员可修改用户权限';
+                form.appendChild(hint);
+
+                // 阻止表单提交
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    alert('权限不足：只有超级管理员可以修改用户权限');
+                });
+            }
+
+            // 选择用户时自动填充当前角色
+            usernameSelect.addEventListener('change', function() {
+                const userId = this.value;
+                if (!userId) return;
+
+                // 查找选中用户的当前角色
+                {% for user_id, user_info in users.items() %}
+                if (userId === "{{ user_id }}") {
+                    roleSelect.value = "{{ user_info.role }}";
+                }
+                {% endfor %}
             });
-            {% endif %}
         });
     </script>
     {% endblock %}
