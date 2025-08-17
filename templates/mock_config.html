@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -397,6 +398,13 @@
             border: 1px solid #f8d7da;
         }
 
+        /* 错误提示样式 */
+        .error-message {
+            color: #d93025;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
         /* 响应式设计 */
         @media (max-width: 768px) {
             .sidebar {
@@ -536,219 +544,120 @@
                 </div>
 
                 <!-- 接口配置表单 -->
-<!-- 仅展示关键修改部分，完整文件结构保持不变 -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h2 class="card-title">创建/编辑MOCK接口</h2>
+                    </div>
 
-<!-- 接口配置表单 -->
-<div class="dashboard-card">
-    <div class="card-header">
-        <h2 class="card-title">创建/编辑MOCK接口</h2>
-    </div>
+                    <form id="mockForm" action="{{ url_for('save_mock_interface') }}" method="post">
+                        <!-- 添加CSRF令牌（关键修复点） -->
+                        {{ csrf_token() }}
 
-    <form id="mockForm" action="{{ url_for('save_mock_interface') }}" method="post">
-        <!-- 隐藏字段，用于编辑时传递接口ID -->
-        <input type="hidden" id="interfaceId" name="id" value="">
-        <!-- 添加CSRF令牌 -->
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <!-- 隐藏字段，用于编辑时传递接口ID -->
+                        <input type="hidden" id="interfaceId" name="id" value="">
 
-        <div class="form-grid">
-            <div class="form-group">
-                <label class="form-label" for="name">接口名称</label>
-                <input type="text" class="form-control" id="name" name="name"
-                       placeholder="例如：用户信息查询接口" required>
-                <div class="error-message" id="nameError"></div>
-            </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label" for="name">接口名称</label>
+                                <input type="text" class="form-control" id="name" name="name"
+                                       placeholder="例如：用户信息查询接口" required>
+                                <div class="error-message" id="nameError"></div>
+                            </div>
 
-            <div class="form-group">
-                <label class="form-label" for="path">接口路径</label>
-                <input type="text" class="form-control" id="path" name="path"
-                       placeholder="例如：/api/user" required>
-                <small style="color: #5f6368; margin-top: 5px; display: block;">
-                    路径将自动添加前缀/mock，完整路径为/mock+输入的路径
-                </small>
-                <div class="error-message" id="pathError"></div>
-            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="path">接口路径</label>
+                                <input type="text" class="form-control" id="path" name="path"
+                                       placeholder="例如：/api/user" required>
+                                <small style="color: #5f6368; margin-top: 5px; display: block;">
+                                    路径将自动添加前缀/mock，完整路径为/mock+输入的路径
+                                </small>
+                                <div class="error-message" id="pathError"></div>
+                            </div>
 
-            <div class="form-group">
-                <label class="form-label" for="method">请求方法</label>
-                <select class="form-control" id="method" name="method" required>
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
-                    <option value="PUT">PUT</option>
-                    <option value="DELETE">DELETE</option>
-                </select>
-            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="method">请求方法</label>
+                                <select class="form-control" id="method" name="method" required>
+                                    <option value="GET">GET</option>
+                                    <option value="POST">POST</option>
+                                    <option value="PUT">PUT</option>
+                                    <option value="DELETE">DELETE</option>
+                                </select>
+                            </div>
 
-            <div class="form-group">
-                <label class="form-label" for="status_code">响应状态码</label>
-                <input type="number" class="form-control" id="status_code" name="status_code"
-                       value="200" min="100" max="599" required>
-                <small style="color: #5f6368; margin-top: 5px; display: block;">
-                    常用状态码：200(成功)、400(参数错误)、404(未找到)、500(服务器错误)
-                </small>
-            </div>
-        </div>
+                            <div class="form-group">
+                                <label class="form-label" for="status_code">响应状态码</label>
+                                <input type="number" class="form-control" id="status_code" name="status_code"
+                                       value="200" min="100" max="599" required>
+                                <small style="color: #5f6368; margin-top: 5px; display: block;">
+                                    常用状态码：200(成功)、400(参数错误)、404(未找到)、500(服务器错误)
+                                </small>
+                            </div>
+                        </div>
 
-        <div class="form-actions">
-            <button type="button" class="btn btn-outline" onclick="resetForm()">
-                <i class="fas fa-refresh"></i> 重置
-            </button>
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-save"></i> 保存接口
-            </button>
-        </div>
-    </form>
-</div>
-
-<!-- 接口列表 -->
-<div class="dashboard-card interfaces-list">
-    <div class="card-header">
-        <h2 class="card-title">已配置的MOCK接口</h2>
-        <span class="badge">{{ interfaces|length }} 个接口</span>
-    </div>
-    <div class="card-body">
-        {% if interfaces %}
-        <div class="table-responsive">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>接口名称</th>
-                        <th>请求方法</th>
-                        <th>接口路径</th>
-                        <th>状态码</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for interface in interfaces.values() %}
-                    <tr>
-                        <td>{{ interface.name }}</td>
-                        <td>
-                            <span class="method-badge method-{{ interface.method|lower }}">
-                                {{ interface.method }}
-                            </span>
-                        </td>
-                        <td>/mock{{ interface.path }}</td>
-                        <td>{{ interface.status_code }}</td>
-                        <td class="actions-cell">
-                            <button class="action-btn edit-btn"
-                                    onclick="editInterface('{{ interface.id }}')">
-                                <i class="fas fa-edit"></i> 编辑
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-outline" onclick="resetForm()">
+                                <i class="fas fa-refresh"></i> 重置
                             </button>
-                            <button class="action-btn delete-btn"
-                                    onclick="deleteInterface('{{ interface.id }}')">
-                                <i class="fas fa-trash"></i> 删除
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> 保存接口
                             </button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <div style="text-align: center; padding: 40px 0; color: #5f6368;">
-            <i class="fas fa-info-circle" style="font-size: 32px; margin-bottom: 15px;"></i>
-            <p>暂无配置的MOCK接口，请使用上方表单创建</p>
-        </div>
-        {% endif %}
-    </div>
-</div>
+                        </div>
+                    </form>
+                </div>
 
-<script>
-    // 存储接口数据，方便编辑操作
-    const mockInterfaces = {{ interfaces|tojson }};
-
-    // 表单验证
-    function validateForm() {
-        let isValid = true;
-        const name = document.getElementById('name').value.trim();
-        const path = document.getElementById('path').value.trim();
-        const nameError = document.getElementById('nameError');
-        const pathError = document.getElementById('pathError');
-
-        // 验证接口名称
-        if (!name) {
-            nameError.textContent = '接口名称不能为空';
-            isValid = false;
-        } else if (name.length > 50) {
-            nameError.textContent = '接口名称不能超过50个字符';
-            isValid = false;
-        } else {
-            nameError.textContent = '';
-        }
-
-        // 验证接口路径
-        if (!path) {
-            pathError.textContent = '接口路径不能为空';
-            isValid = false;
-        } else if (!path.startsWith('/')) {
-            pathError.textContent = '接口路径必须以斜杠开头';
-            isValid = false;
-        } else {
-            pathError.textContent = '';
-        }
-
-        return isValid;
-    }
-
-    // 编辑接口
-    function editInterface(interfaceId) {
-        const interface = mockInterfaces[interfaceId];
-        if (interface) {
-            document.getElementById('interfaceId').value = interface.id;
-            document.getElementById('name').value = interface.name;
-            document.getElementById('path').value = interface.path;
-            document.getElementById('method').value = interface.method;
-            document.getElementById('status_code').value = interface.status_code;
-            // 清空错误提示
-            document.getElementById('nameError').textContent = '';
-            document.getElementById('pathError').textContent = '';
-        }
-    }
-
-    // 删除接口（改为异步请求）
-    function deleteInterface(interfaceId) {
-        if (!confirm('确定要删除此接口吗？此操作不可撤销。')) {
-            return;
-        }
-
-        const csrfToken = document.querySelector('input[name="csrf_token"]').value;
-
-        fetch('{{ url_for('delete_mock_interface') }}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: `id=${encodeURIComponent(interfaceId)}&csrf_token=${encodeURIComponent(csrfToken)}`
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert('接口删除成功');
-                window.location.reload(); // 刷新页面
-            } else {
-                alert('删除失败：' + (data.message || '未知错误'));
-            }
-        })
-        .catch(error => {
-            alert('操作失败，请重试');
-        });
-    }
-
-    // 重置表单
-    function resetForm() {
-        document.getElementById('mockForm').reset();
-        document.getElementById('interfaceId').value = '';
-        document.getElementById('nameError').textContent = '';
-        document.getElementById('pathError').textContent = '';
-    }
-
-    // 表单提交前验证
-    document.getElementById('mockForm').addEventListener('submit', function(e) {
-        if (!validateForm()) {
-            e.preventDefault();
-        }
-    });
-</script>
+                <!-- 接口列表 -->
+                <div class="dashboard-card interfaces-list">
+                    <div class="card-header">
+                        <h2 class="card-title">已配置的MOCK接口</h2>
+                        <span class="badge">{{ interfaces|length }} 个接口</span>
+                    </div>
+                    <div class="card-body">
+                        {% if interfaces %}
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>接口名称</th>
+                                        <th>请求方法</th>
+                                        <th>接口路径</th>
+                                        <th>状态码</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for interface in interfaces.values() %}
+                                    <tr>
+                                        <td>{{ interface.name }}</td>
+                                        <td>
+                                            <span class="method-badge method-{{ interface.method|lower }}">
+                                                {{ interface.method }}
+                                            </span>
+                                        </td>
+                                        <td>/mock{{ interface.path }}</td>
+                                        <td>{{ interface.status_code }}</td>
+                                        <td class="actions-cell">
+                                            <button class="action-btn edit-btn"
+                                                    onclick="editInterface('{{ interface.id }}')">
+                                                <i class="fas fa-edit"></i> 编辑
+                                            </button>
+                                            <button class="action-btn delete-btn"
+                                                    onclick="deleteInterface('{{ interface.id }}')">
+                                                <i class="fas fa-trash"></i> 删除
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div style="text-align: center; padding: 40px 0; color: #5f6368;">
+                            <i class="fas fa-info-circle" style="font-size: 32px; margin-bottom: 15px;"></i>
+                            <p>暂无配置的MOCK接口，请使用上方表单创建</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -756,6 +665,39 @@
     <script>
         // 存储接口数据，方便编辑操作
         const mockInterfaces = {{ interfaces|tojson }};
+
+        // 表单验证
+        function validateForm() {
+            let isValid = true;
+            const name = document.getElementById('name').value.trim();
+            const path = document.getElementById('path').value.trim();
+            const nameError = document.getElementById('nameError');
+            const pathError = document.getElementById('pathError');
+
+            // 验证接口名称
+            if (!name) {
+                nameError.textContent = '接口名称不能为空';
+                isValid = false;
+            } else if (name.length > 50) {
+                nameError.textContent = '接口名称不能超过50个字符';
+                isValid = false;
+            } else {
+                nameError.textContent = '';
+            }
+
+            // 验证接口路径
+            if (!path) {
+                pathError.textContent = '接口路径不能为空';
+                isValid = false;
+            } else if (!path.startsWith('/')) {
+                pathError.textContent = '接口路径必须以斜杠开头';
+                isValid = false;
+            } else {
+                pathError.textContent = '';
+            }
+
+            return isValid;
+        }
 
         // 编辑接口
         function editInterface(interfaceId) {
@@ -766,50 +708,53 @@
                 document.getElementById('path').value = interface.path;
                 document.getElementById('method').value = interface.method;
                 document.getElementById('status_code').value = interface.status_code;
-                document.getElementById('response').value = interface.response;
-
-                // 滚动到表单顶部
-                document.getElementById('mockForm').scrollIntoView({ behavior: 'smooth' });
+                // 清空错误提示
+                document.getElementById('nameError').textContent = '';
+                document.getElementById('pathError').textContent = '';
             }
         }
 
-        // 删除接口
+        // 删除接口（异步请求）
         function deleteInterface(interfaceId) {
-            if (confirm('确定要删除这个MOCK接口吗？此操作不可恢复。')) {
-                fetch(`/mock_interface/${interfaceId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        // 刷新页面以显示更新后的列表
-                        window.location.reload();
-                    } else {
-                        alert('删除失败：' + data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('删除接口时出错：', error);
-                    alert('删除接口时发生错误');
-                });
+            if (!confirm('确定要删除此接口吗？此操作不可撤销。')) {
+                return;
             }
+
+            const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+
+            fetch('{{ url_for('delete_mock_interface') }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `id=${encodeURIComponent(interfaceId)}&csrf_token=${encodeURIComponent(csrfToken)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('接口删除成功');
+                    window.location.reload(); // 刷新页面
+                } else {
+                    alert('删除失败：' + (data.message || '未知错误'));
+                }
+            })
+            .catch(error => {
+                alert('操作失败，请重试');
+            });
         }
 
         // 重置表单
         function resetForm() {
             document.getElementById('mockForm').reset();
             document.getElementById('interfaceId').value = '';
-            // 设置默认响应数据
-            document.getElementById('response').value = '{"code": 200, "message": "success", "data": {}}';
+            document.getElementById('nameError').textContent = '';
+            document.getElementById('pathError').textContent = '';
         }
 
-        // 为当前菜单添加active类
-        document.querySelectorAll('.menu-link').forEach(link => {
-            if (link.getAttribute('href') === window.location.pathname) {
-                link.classList.add('active');
+        // 表单提交前验证
+        document.getElementById('mockForm').addEventListener('submit', function(e) {
+            if (!validateForm()) {
+                e.preventDefault();
             }
         });
     </script>

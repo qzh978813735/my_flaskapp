@@ -6,7 +6,6 @@ import hashlib  # 用于密码加密
 # 现有代码中使用全局变量存储数据（如test_environments、database_configs等）
 # 在多线程环境下存在风险，临时添加线程锁避免竞态条件
 import threading
-from flask import Flask
 from flask_wtf.csrf import CSRFProtect
 
 app = Flask(__name__)
@@ -21,10 +20,12 @@ data_lock = threading.Lock()
 # 初始化Flask应用
 app = Flask(__name__)
 
-# 扩展数据模型 - 执行计划
-execution_plans = []  # 存储所有执行计划
-execution_logs = []  # 存储执行日志
-database_configs = []
+# 全局变量初始化（解决NameError）
+mock_interfaces = {}  # MOCK接口配置
+database_configs = []  # 数据库配置
+test_environments = []  # 测试环境配置
+execution_plans = []  # 执行计划
+execution_logs = []  # 执行日志
 # 设置会话密钥，用于加密会话数据
 app.secret_key = os.environ.get('SECRET_KEY', 'dev_key_for_testing_only')
 
@@ -1029,9 +1030,8 @@ def log_details(log_id):
 # 退出登录
 @app.route('/logout')
 def logout():
-    session.pop('username', None)
-    session.pop('name', None)
-    flash('您已成功退出登录', 'success')
+    session.clear()
+    flash('已成功退出登录', 'success')
     return redirect(url_for('login'))
 
 
