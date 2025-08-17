@@ -577,7 +577,7 @@
 
                     <form id="planForm" method="post">
                         <!-- CSRF令牌 -->
-                        {{ csrf_token() }}
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                         <input type="hidden" name="action" id="planAction" value="add">
                         <input type="hidden" name="plan_id" id="planId">

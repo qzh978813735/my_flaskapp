@@ -862,6 +862,15 @@ def execution_logs_page():
                            username=session['name'],
                            logs=sorted_logs)
 
+# 执行日志详情路由
+@app.route('/execution_plan/logs/<log_id>')
+@login_required
+def log_details(log_id):
+    # 查找指定ID的日志
+    log = next((log for log in execution_logs if log['id'] == log_id), None)
+    if not log:
+        return jsonify({'status': 'error', 'message': '未找到日志记录'}), 404
+    return jsonify(log)
 
 # 启动应用
 if __name__ == '__main__':
