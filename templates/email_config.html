@@ -1,10 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>邮件配置 - 首页</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .container {
+            padding: 30px;
+            text-align: center;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px auto;
+            max-width: 600px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 10px;
+            background: #1a73e8;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+    </style>
 </head>
 <body>
-
+    <div class="container">
+        <h1>邮件配置中心</h1>
+        <div class="card">
+            <h2>请选择配置类型</h2>
+            <a href="{{ url_for('email_sender_config') }}" class="btn">
+                <i class="fas fa-envelope"></i> 发件人配置
+            </a>
+            <a href="{{ url_for('email_recipients_config') }}" class="btn">
+                <i class="fas fa-users"></i> 收件人配置
+            </a>
+        </div>
+    </div>
 </body>
 </html>

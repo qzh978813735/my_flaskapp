@@ -402,7 +402,8 @@
 
                     <!-- MOCK接口表单（添加CSRF令牌） -->
                     <form id="mockForm" action="{{ url_for('mock_config') }}" method="post">
-                        {{ csrf_token() }}
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
 
                         <!-- 隐藏字段，用于编辑时传递接口ID -->
                         <input type="hidden" id="interfaceId" name="id" value="">

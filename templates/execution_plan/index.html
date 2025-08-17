@@ -1,0 +1,52 @@
+{% extends "execution_plan/base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">执行计划管理</h2>
+        <span>管理自动化测试的执行计划</span>
+    </div>
+    <div class="card-body">
+        <div class="welcome-message">
+            <i class="fas fa-calendar-alt fa-3x" style="color: #1a73e8; margin-bottom: 20px;"></i>
+            <h3>欢迎使用执行计划管理</h3>
+            <p>请从左侧子菜单中选择需要管理的模块：</p>
+            <ul class="feature-list">
+                <li><i class="fas fa-cog"></i> 计划配置 - 创建和管理执行计划</li>
+                <li><i class="fas fa-play"></i> 计划执行 - 查看执行状态并手动触发计划</li>
+                <li><i class="fas fa-history"></i> 操作日志 - 查看历史执行记录</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<style>
+    .welcome-message {
+        text-align: center;
+        padding: 30px;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    
+    .feature-list {
+        text-align: left;
+        margin-top: 20px;
+        list-style: none;
+        padding: 0;
+    }
+    
+    .feature-list li {
+        padding: 10px 0;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .feature-list li i {
+        color: #1a73e8;
+        width: 24px;
+        text-align: center;
+    }
+</style>
+{% endblock %}

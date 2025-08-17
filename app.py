@@ -233,12 +233,12 @@ def user_management():
 @app.route('/environment_config')
 @login_required
 def environment_config():
-    return render_template('environment_config/index.html',
+    return render_template('environment_config/base.html',
                            username=session['name'])
 
 
 # 数据库配置路由
-@app.route('/environment_config/databases', methods=['GET', 'POST'])
+@app.route('/environment_config', methods=['GET', 'POST'])
 @login_required
 def database_config():
     global database_configs
@@ -313,7 +313,7 @@ def database_config():
 
 
 # 测试环境管理路由
-@app.route('/environment_config/test_environments', methods=['GET', 'POST'])
+@app.route('/test_environment_management', methods=['GET', 'POST'])
 @login_required
 def test_environment_management():
     global test_environments
@@ -428,69 +428,76 @@ def test_environment_management():
 
 
 # 邮件配置路由
-@app.route('/email_config', methods=['GET', 'POST'])
+
+
+# 邮件发件人配置路由
+@app.route('/email_sender_config', methods=['GET', 'POST'])
 @login_required
-def email_config():
-    global email_config, email_recipients
-
+def email_sender_config():
+    global email_config
     if request.method == 'POST':
-        action = request.form.get('action', '').strip()
-
-        if action == 'save_config':
-            # 保存邮件服务器配置
-            email_config = {
-                'smtp_server': request.form.get('smtp_server', '').strip(),
-                'smtp_port': int(request.form.get('smtp_port', 587)),
-                'sender_email': request.form.get('sender_email', '').strip(),
-                'sender_password': request.form.get('sender_password', '').strip(),
-                'use_tls': request.form.get('use_tls') == 'on'
-            }
-            flash('邮件服务器配置已保存', 'success')
-            return redirect(url_for('email_config'))
-
-        elif action == 'add_recipient':
-            # 添加收件人
-            email = request.form.get('email', '').strip()
-            name = request.form.get('name', '').strip()
-
-            if not email or not name:
-                flash('邮箱和姓名不能为空', 'error')
-                return redirect(url_for('email_config'))
-
-            # 检查邮箱格式
-            if '@' not in email:
-                flash('邮箱格式不正确', 'error')
-                return redirect(url_for('email_config'))
-
-            # 检查重复
-            if any(r['email'] == email for r in email_recipients):
-                flash(f'邮箱 "{email}" 已存在', 'error')
-                return redirect(url_for('email_config'))
-
-            email_recipients.append({
-                'id': str(uuid.uuid4())[:8],
-                'email': email,
-                'name': name,
-                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            })
-            flash(f'收件人 "{name}" 添加成功', 'success')
-            return redirect(url_for('email_config'))
-
-        elif action == 'delete_recipient':
-            # 删除收件人
-            recipient_id = request.form.get('recipient_id', '').strip()
-            if recipient_id:
-
-                email_recipients = [r for r in email_recipients if r['id'] != recipient_id]
-                flash('收件人已删除', 'success')
-            return redirect(url_for('email_config'))
-
-    return render_template('email_config.html',
+        # 保存发件人配置
+        email_config = {
+            'smtp_server': request.form.get('smtp_server', '').strip(),
+            'smtp_port': int(request.form.get('smtp_port', 587)),
+            'sender_email': request.form.get('sender_email', '').strip(),
+            'sender_password': request.form.get('sender_password', '').strip(),
+            'use_tls': request.form.get('use_tls') == 'on'
+        }
+        flash('邮件服务器配置已保存', 'success')
+        return redirect(url_for('email_sender_config'))
+    return render_template('email_sender_config.html',
                            username=session['name'],
-                           email_config=email_config,
+                           config=email_config)
+
+# 邮件收件人配置路由
+@app.route('/email_recipients_config', methods=['GET', 'POST'])
+@login_required
+def email_recipients_config():
+    global email_recipients
+    if request.method == 'POST':
+        # 添加收件人
+        email = request.form.get('email', '').strip()
+        name = request.form.get('name', '').strip()
+        if not email or not name:
+            flash('邮箱和姓名不能为空', 'error')
+            return redirect(url_for('email_recipients_config'))
+        if '@' not in email:
+            flash('邮箱格式不正确', 'error')
+            return redirect(url_for('email_recipients_config'))
+        if any(r['email'] == email for r in email_recipients):
+            flash(f'邮箱 "{email}" 已存在', 'error')
+            return redirect(url_for('email_recipients_config'))
+        email_recipients.append({
+            'id': str(uuid.uuid4())[:8],
+            'email': email,
+            'name': name,
+            'is_active': request.form.get('is_active') == 'on',
+            'create_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        })
+        flash(f'收件人 "{name}" 添加成功', 'success')
+        return redirect(url_for('email_recipients_config'))
+    return render_template('email_recipients_config.html',
+                           username=session['name'],
                            recipients=email_recipients)
 
+# 删除收件人路由
+@app.route('/delete_recipient/<recipient_id>', methods=['POST'])
+@login_required
+def delete_recipient(recipient_id):
+    global email_recipients
+    original_length = len(email_recipients)
+    email_recipients = [r for r in email_recipients if r['id'] != recipient_id]
+    if len(email_recipients) < original_length:
+        return jsonify({'status': 'success', 'message': '收件人已删除'})
+    return jsonify({'status': 'error', 'message': '未找到收件人'})
 
+# 邮件配置首页（重定向到发件人配置）
+@app.route('/email_config')
+@login_required
+def email_config():
+    # 作为首页，直接跳转到发件人配置页面
+    return redirect(url_for('email_sender_config'))
 # 测试邮件发送
 @app.route('/test_email_send', methods=['POST'])
 @login_required
@@ -695,11 +702,30 @@ def api_test():
 
 
 # 执行计划首页
+# 确保路由定义正确
 @app.route('/execution_plan')
 @login_required
-def execution_plan():
-    return render_template('execution_plan/index.html',
-                           username=session['name'])
+def execution_plan():  # 函数名必须匹配
+    return render_template('execution_plan/index.html', username=session['name'])
+
+# 计划执行页面路由
+@app.route('/execution_plan/execution')
+@login_required
+def plan_execution():
+    # 这里可以添加获取计划执行状态的逻辑
+    # 示例数据，实际应根据业务逻辑获取
+    plans_with_status = []
+    for plan in execution_plans:
+        # 查找该计划的最后一次执行记录
+        last_execution = next((log for log in execution_logs
+                              if log.get('plan_id') == plan['id']), None)
+        plans_with_status.append({
+            'plan': plan,
+            'last_execution': last_execution
+        })
+    return render_template('execution_plan/execution.html',
+                           username=session['name'],
+                           plans_with_status=plans_with_status)
 
 
 # 执行计划配置路由
