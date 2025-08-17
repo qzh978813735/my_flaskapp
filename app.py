@@ -479,7 +479,7 @@ def email_config():
             # 删除收件人
             recipient_id = request.form.get('recipient_id', '').strip()
             if recipient_id:
-                global email_recipients
+
                 email_recipients = [r for r in email_recipients if r['id'] != recipient_id]
                 flash('收件人已删除', 'success')
             return redirect(url_for('email_config'))
@@ -800,7 +800,7 @@ def plan_config():
                 flash('计划ID不能为空', 'error')
                 return redirect(url_for('plan_config'))
 
-            global execution_plans
+
             original_count = len(execution_plans)
             execution_plans = [p for p in execution_plans if p['id'] != plan_id]
 
