@@ -11,8 +11,9 @@ from email.mime.multipart import MIMEMultipart
 # 初始化Flask应用
 app = Flask(__name__)
 app.secret_key = 'your-secure-secret-key-1234567890'  # 生产环境请更换为随机字符串
-csrf = CSRFProtect(app)  # 启用CSRF保护
 
+app.config['WTF_CSRF_ENABLED'] = True
+csrf = CSRFProtect(app)
 # 全局变量初始化（修复NameError）
 mock_interfaces = {}  # MOCK接口配置
 database_configs = []  # 数据库配置

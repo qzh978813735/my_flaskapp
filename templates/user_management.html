@@ -413,7 +413,7 @@
 
                     <!-- 用户操作表单（添加CSRF令牌） -->
                     <form id="userForm" method="post">
-                        {{ csrf_token() }}
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="action" id="userAction" value="add">
                         <input type="hidden" name="current_username" id="currentUsername">
 
@@ -490,7 +490,7 @@
                                     <tr>
                                         <td>{{ loop.index }}</td>
                                         <td>{{ user_id }}</td>
-                                        <td>{{ user_info.name }}</td>
+                                        <td>{{ user_info['name'] }}</td>
                                         <td>
                                             <span class="role-badge role-{{ user_info.role }}">
                                                 {% if user_info.role == 'admin' %}超级管理员{% elif user_info.role == 'operator' %}操作员{% else %}查看者{% endif %}
@@ -534,7 +534,8 @@
 
         // 编辑用户
         function editUser(username) {
-            const userData = {{ users|tojson }}[username];
+
+            const userData = JSON.parse('{{ users|tojson }}')[username];
             if (userData) {
                 document.getElementById('formTitle').textContent = '编辑用户';
                 document.getElementById('userAction').value = 'edit';
