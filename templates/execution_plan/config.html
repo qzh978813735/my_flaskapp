@@ -1,282 +1,991 @@
-
-
-{% extends "execution_plan/base.html" %}
-
-{% block content %}
-<!-- 计划配置页面 -->
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">执行计划配置</h2>
-        <button class="btn btn-primary" onclick="showModal('addPlanModal')">
-            <i class="fas fa-plus"></i> 新增计划
-        </button>
-    </div>
-    <div class="card-body">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>计划名称</th>
-                    <th>执行类型</th>
-                    <th>执行频率</th>
-                    <th>关联任务</th>
-                    <th>状态</th>
-                    <th>创建时间</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% if plans %}
-                    {% for plan in plans %}
-                    <tr>
-                        <td>{{ plan.name }}</td>
-                        <td>{{ '定时执行' if plan.type == 'scheduled' else '手动执行' }}</td>
-                        <td>
-                            {% if plan.type == 'scheduled' %}
-                                {{
-                                    '每天 ' + plan.schedule.time if plan.schedule.frequency == 'daily' else
-                                    '每周' + ['一', '二', '三', '四', '五', '六', '日'][plan.schedule.day_of_week|int - 1] + ' ' + plan.schedule.time if plan.schedule.frequency == 'weekly' else
-                                    '每月' + plan.schedule.day_of_month + '日 ' + plan.schedule.time
-                                }}
-                            {% else %}
-                                -
-                            {% endif %}
-                        </td>
-                        <td>{{ plan.tasks|length }} 个任务</td>
-                        <td>
-                            <span class="status-badge {{ 'status-active' if plan.status == 'active' else 'status-inactive' }}">
-                                {{ '启用' if plan.status == 'active' else '禁用' }}
-                            </span>
-                        </td>
-                        <td>{{ plan.created_at }}</td>
-                        <td>
-                            <button class="btn btn-outline btn-sm" onclick="editPlan('{{ plan.id }}')">
-                                <i class="fas fa-edit"></i> 编辑
-                            </button>
-                            <button class="btn btn-danger btn-sm" onclick="deletePlan('{{ plan.id }}', '{{ plan.name }}')">
-                                <i class="fas fa-trash"></i> 删除
-                            </button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                {% else %}
-                    <tr>
-                        <td colspan="7" style="text-align: center; padding: 30px;">
-                            <i class="fas fa-calendar-alt" style="font-size: 32px; color: #ddd; margin-bottom: 10px;"></i>
-                            <p>暂无执行计划，请点击"新增计划"创建</p>
-                        </td>
-                    </tr>
-                {% endif %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<!-- 新增/编辑计划模态框 -->
-<div class="modal-backdrop" id="addPlanModal">
-    <div class="modal">
-        <div class="modal-header">
-            <h3 class="modal-title" id="planModalTitle">新增执行计划</h3>
-            <button class="modal-close" onclick="hideModal('addPlanModal')">&times;</button>
-        </div>
-        <div class="modal-body">
-            <form id="planForm" method="post">
-                <input type="hidden" name="action" id="planAction" value="add">
-                <input type="hidden" name="plan_id" id="planId">
-
-                <div class="form-group">
-                    <label class="form-label" for="plan_name">计划名称 <span style="color: #d93025;">*</span></label>
-                    <input type="text" class="form-control" id="plan_name" name="plan_name" placeholder="请输入执行计划名称" required>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="description">计划描述</label>
-                    <textarea class="form-control" id="description" name="description" rows="3" placeholder="请输入执行计划描述"></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="execution_type">执行类型 <span style="color: #d93025;">*</span></label>
-                    <select class="form-select" id="execution_type" name="execution_type" required onchange="toggleScheduleFields()">
-                        <option value="manual">手动执行</option>
-                        <option value="scheduled">定时执行</option>
-                    </select>
-                </div>
-
-                <!-- 定时执行配置区域 -->
-                <div id="scheduleFields" style="display: none;">
-                    <div class="form-group">
-                        <label class="form-label" for="frequency">执行频率 <span style="color: #d93025;">*</span></label>
-                        <select class="form-select" id="frequency" name="frequency" onchange="toggleFrequencyFields()">
-                            <option value="daily">每天</option>
-                            <option value="weekly">每周</option>
-                            <option value="monthly">每月</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label" for="execution_time">执行时间 <span style="color: #d93025;">*</span></label>
-                        <input type="time" class="form-control" id="execution_time" name="execution_time" required>
-                    </div>
-
-                    <div id="weeklyFields" style="display: none;">
-                        <div class="form-group">
-                            <label class="form-label" for="day_of_week">星期几 <span style="color: #d93025;">*</span></label>
-                            <select class="form-select" id="day_of_week" name="day_of_week">
-                                <option value="1">星期一</option>
-                                <option value="2">星期二</option>
-                                <option value="3">星期三</option>
-                                <option value="4">星期四</option>
-                                <option value="5">星期五</option>
-                                <option value="6">星期六</option>
-                                <option value="7">星期日</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div id="monthlyFields" style="display: none;">
-                        <div class="form-group">
-                            <label class="form-label" for="day_of_month">每月几号 <span style="color: #d93025;">*</span></label>
-                            <input type="number" class="form-control" id="day_of_month" name="day_of_month" min="1" max="31" value="1">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">关联测试任务 <span style="color: #d93025;">*</span></label>
-                    <div id="taskCheckboxes">
-                        {% for task in test_tasks %}
-                        <div class="checkbox-group">
-                            <input type="checkbox" class="form-checkbox" id="task_{{ task.id }}" name="tasks[]" value="{{ task.id }}">
-                            <label for="task_{{ task.id }}">{{ task.name }}</label>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <div class="checkbox-group">
-                        <input type="checkbox" class="form-checkbox" id="status" name="status" checked>
-                        <label for="status">启用计划</label>
-                    </div>
-                </div>
-            </form>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-outline" onclick="hideModal('addPlanModal')">取消</button>
-            <button class="btn btn-primary" onclick="document.getElementById('planForm').submit()">保存</button>
-        </div>
-    </div>
-</div>
-
-<!-- 删除确认模态框 -->
-<div class="modal-backdrop" id="deleteConfirmModal">
-    <div class="modal">
-        <div class="modal-header">
-            <h3 class="modal-title">确认删除</h3>
-            <button class="modal-close" onclick="hideModal('deleteConfirmModal')">&times;</button>
-        </div>
-        <div class="modal-body">
-            <p>确定要删除执行计划 "<span id="deletePlanName" style="font-weight: 600;"></span>" 吗？此操作不可撤销。</p>
-            <form id="deleteForm" method="post">
-                <input type="hidden" name="action" value="delete">
-                <input type="hidden" name="plan_id" id="deletePlanId">
-            </form>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-outline" onclick="hideModal('deleteConfirmModal')">取消</button>
-            <button class="btn btn-danger" onclick="document.getElementById('deleteForm').submit()">确认删除</button>
-        </div>
-    </div>
-</div>
-
-<script>
-    // 执行计划数据
-    const plans = {{ plans|tojson }};
-    const testTasks = {{ test_tasks|tojson }};
-
-    // 切换定时执行配置显示
-    function toggleScheduleFields() {
-        const executionType = document.getElementById('execution_type').value;
-        const scheduleFields = document.getElementById('scheduleFields');
-
-        if (executionType === 'scheduled') {
-            scheduleFields.style.display = 'block';
-            toggleFrequencyFields(); // 触发一次频率字段显示
-        } else {
-            scheduleFields.style.display = 'none';
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>执行计划配置 - 自动化测试平台</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* 基础样式与其他页面保持一致 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-    }
 
-    // 切换频率相关字段显示
-    function toggleFrequencyFields() {
-        const frequency = document.getElementById('frequency').value;
-        const weeklyFields = document.getElementById('weeklyFields');
-        const monthlyFields = document.getElementById('monthlyFields');
-
-        weeklyFields.style.display = 'none';
-        monthlyFields.style.display = 'none';
-
-        if (frequency === 'weekly') {
-            weeklyFields.style.display = 'block';
-        } else if (frequency === 'monthly') {
-            monthlyFields.style.display = 'block';
+        body {
+            background-color: #f0f2f5;
+            color: #333;
+            line-height: 1.6;
         }
-    }
 
-    // 编辑计划
-    function editPlan(planId) {
-        const plan = plans.find(p => p.id === planId);
-        if (!plan) return;
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
 
-        // 填充表单数据
-        document.getElementById('planModalTitle').textContent = '编辑执行计划';
-        document.getElementById('planAction').value = 'edit';
-        document.getElementById('planId').value = plan.id;
-        document.getElementById('plan_name').value = plan.name;
-        document.getElementById('description').value = plan.description || '';
-        document.getElementById('execution_type').value = plan.type;
+        .sidebar {
+            width: 250px;
+            background-color: #202124;
+            color: white;
+            padding: 20px 0;
+            transition: all 0.3s ease;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+        }
 
-        // 处理定时配置
-        toggleScheduleFields();
-        if (plan.type === 'scheduled') {
-            document.getElementById('frequency').value = plan.schedule.frequency;
-            document.getElementById('execution_time').value = plan.schedule.time;
+        .sidebar-header {
+            padding: 0 20px 20px;
+            border-bottom: 1px solid #3c4043;
+            margin-bottom: 20px;
+        }
 
-            toggleFrequencyFields();
-            if (plan.schedule.frequency === 'weekly') {
-                document.getElementById('day_of_week').value = plan.schedule.day_of_week;
-            } else if (plan.schedule.frequency === 'monthly') {
-                document.getElementById('day_of_month').value = plan.schedule.day_of_month;
+        .sidebar-logo {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a73e8;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sidebar-menu {
+            list-style: none;
+        }
+
+        .menu-item {
+            margin-bottom: 5px;
+        }
+
+        .menu-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 20px;
+            color: #dadce0;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .menu-link:hover, .menu-link.active {
+            background-color: #3c4043;
+            color: white;
+            border-left-color: #1a73e8;
+        }
+
+        .menu-icon {
+            font-size: 18px;
+            width: 20px;
+            text-align: center;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .top-nav {
+            background-color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+
+        .nav-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #202124;
+        }
+
+        .breadcrumbs {
+            font-size: 14px;
+            color: #5f6368;
+        }
+
+        .breadcrumbs a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        .breadcrumbs a:hover {
+            text-decoration: underline;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background-color: #1a73e8;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+
+        .logout-btn {
+            color: #d93025;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 10px;
+            border-radius: 4px;
+            transition: background-color 0.2s ease;
+        }
+
+        .logout-btn:hover {
+            background-color: rgba(217, 48, 37, 0.1);
+        }
+
+        .page-content {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        .dashboard-card {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.05);
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #202124;
+            margin: 0;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background-color: #1a73e8;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #1765cc;
+        }
+
+        .btn-danger {
+            background-color: #d93025;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background-color: #c5221f;
+        }
+
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #1a73e8;
+            color: #1a73e8;
+        }
+
+        .btn-outline:hover {
+            background-color: #1a73e8;
+            color: white;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #202124;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+        }
+
+        textarea.form-control {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        select.form-control {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235f6368' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 30px;
+        }
+
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        .plans-list {
+            margin-top: 30px;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .data-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #202124;
+        }
+
+        .data-table tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .status-badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-active {
+            background-color: #e6f4ea;
+            color: #137333;
+        }
+
+        .status-inactive {
+            background-color: #f8f9fa;
+            color: #5f6368;
+        }
+
+        .type-badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .type-manual {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+        }
+
+        .type-scheduled {
+            background-color: #fce8e6;
+            color: #d93025;
+        }
+
+        .actions-cell {
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            transition: color 0.2s ease;
+            padding: 4px;
+        }
+
+        .edit-btn {
+            color: #1a73e8;
+        }
+
+        .edit-btn:hover {
+            color: #1765cc;
+        }
+
+        .delete-btn {
+            color: #d93025;
+        }
+
+        .delete-btn:hover {
+            color: #c5221f;
+        }
+
+        .execute-btn {
+            color: #137333;
+        }
+
+        .execute-btn:hover {
+            color: #0d5b27;
+        }
+
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+
+        .message {
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .success {
+            background-color: #e6f4ea;
+            color: #137333;
+            border: 1px solid #d3e7d3;
+        }
+
+        .error {
+            background-color: #fce8e6;
+            color: #d93025;
+            border: 1px solid #f8d7da;
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .schedule-options {
+            margin-top: 15px;
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 6px;
+        }
+
+        .error-message {
+            color: #d93025;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                padding: 10px 0;
+            }
+
+            .sidebar-menu {
+                display: flex;
+                overflow-x: auto;
+            }
+
+            .menu-item {
+                margin-bottom: 0;
+                flex: 0 0 auto;
+            }
+
+            .menu-link {
+                flex-direction: column;
+                padding: 10px 15px;
+                text-align: center;
+            }
+
+            .menu-text {
+                font-size: 12px;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏菜单 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <i class="fas fa-robot"></i>
+                    <span>自动化测试平台</span>
+                </div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item">
+                    <a href="{{ url_for('dashboard') }}" class="menu-link">
+                        <i class="fas fa-tachometer-alt menu-icon"></i>
+                        <span class="menu-text">仪表盘</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('user_management') }}" class="menu-link">
+                        <i class="fas fa-users menu-icon"></i>
+                        <span class="menu-text">用户管理</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('environment_config') }}" class="menu-link">
+                        <i class="fas fa-cogs menu-icon"></i>
+                        <span class="menu-text">环境配置</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('email_config') }}" class="menu-link">
+                        <i class="fas fa-envelope menu-icon"></i>
+                        <span class="menu-text">邮件配置</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('api_test') }}" class="menu-link">
+                        <i class="fas fa-plug menu-icon"></i>
+                        <span class="menu-text">接口测试</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('execution_plan') }}" class="menu-link active">
+                        <i class="fas fa-calendar-alt menu-icon"></i>
+                        <span class="menu-text">执行计划</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('mock_data') }}" class="menu-link">
+                        <i class="fas fa-database menu-icon"></i>
+                        <span class="menu-text">MOCK数据</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('mock_config') }}" class="menu-link">
+                        <i class="fas fa-sliders-h menu-icon"></i>
+                        <span class="menu-text">MOCK接口配置</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="{{ url_for('mock_call') }}" class="menu-link">
+                        <i class="fas fa-exchange-alt menu-icon"></i>
+                        <span class="menu-text">MOCK接口调用</span>
+                    </a>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- 主内容区域 -->
+        <main class="main-content">
+            <!-- 顶部导航栏 -->
+            <nav class="top-nav">
+                <div>
+                    <h1 class="nav-title">执行计划配置</h1>
+                    <div class="breadcrumbs">
+                        <a href="{{ url_for('dashboard') }}">首页</a> &gt;
+                        <span>执行计划</span> &gt;
+                        <span>计划配置</span>
+                    </div>
+                </div>
+                <div class="user-info">
+                    <div class="user-avatar">{{ username[0].upper() }}</div>
+                    <span>{{ username }}</span>
+                    <button class="logout-btn" onclick="window.location.href='{{ url_for('logout') }}'">
+                        <i class="fas fa-sign-out-alt"></i> 退出登录
+                    </button>
+                </div>
+            </nav>
+
+            <!-- 页面内容 -->
+            <div class="page-content">
+                <!-- 消息提示 -->
+                <div class="flash-messages">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="message {{ category }}">
+                                    <i class="fas {% if category == 'success' %}fa-check-circle{% else %}fa-exclamation-circle{% endif %}"></i>
+                                    <span>{{ message }}</span>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+                </div>
+
+                <!-- 执行计划配置表单 -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h2 class="card-title" id="formTitle">创建执行计划</h2>
+                        <button type="button" class="btn btn-outline" onclick="resetPlanForm()">
+                            <i class="fas fa-plus"></i> 新建计划
+                        </button>
+                    </div>
+
+                    <form id="planForm" method="post">
+                        <!-- CSRF令牌 -->
+                        {{ csrf_token() }}
+
+                        <input type="hidden" name="action" id="planAction" value="add">
+                        <input type="hidden" name="plan_id" id="planId">
+
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label" for="plan_name">计划名称 <span style="color: red;">*</span></label>
+                                <input type="text" class="form-control" id="plan_name" name="plan_name"
+                                       placeholder="例如：每日API自动化测试" required>
+                                <div class="error-message" id="planNameError"></div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label" for="execution_type">执行类型 <span style="color: red;">*</span></label>
+                                <select class="form-control" id="execution_type" name="execution_type" required
+                                        onchange="toggleScheduleOptions()">
+                                    <option value="manual">手动执行</option>
+                                    <option value="scheduled">定时执行</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="description">计划描述</label>
+                            <textarea class="form-control" id="description" name="description"
+                                      placeholder="描述此执行计划的目的和内容"></textarea>
+                        </div>
+
+                        <!-- 定时任务配置选项 -->
+                        <div id="scheduleOptions" class="schedule-options" style="display: none;">
+                            <h4 style="margin-bottom: 15px; font-size: 16px;">定时执行配置</h4>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label" for="frequency">执行频率 <span style="color: red;">*</span></label>
+                                    <select class="form-control" id="frequency" name="frequency">
+                                        <option value="daily">每天</option>
+                                        <option value="weekly">每周</option>
+                                        <option value="monthly">每月</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label class="form-label" for="execution_time">执行时间 <span style="color: red;">*</span></label>
+                                    <input type="time" class="form-control" id="execution_time" name="execution_time" required>
+                                    <div class="error-message" id="executionTimeError"></div>
+                                </div>
+
+                                <div class="form-group" id="dayOfWeekGroup">
+                                    <label class="form-label">每周执行日</label>
+                                    <div class="checkbox-group">
+                                        <div class="checkbox-item">
+                                            <input type="checkbox" id="day1" name="day_of_week" value="1">
+                                            <label for="day1">周一</label>
+                                        </div>
+                                        <div class="checkbox-item">
+                                            <input type="checkbox" id="day2" name="day_of_week" value="2">
+                                            <label for="day2">周二</label>
+                                        </div>
+                                        <div class="checkbox-item">
+                                            <input type="checkbox" id="day3" name="day_of_week" value="3">
+                                            <label for="day3">周三</label>
+                                        </div>
+                                        <div class="checkbox-item">
+                                            <input type="checkbox" id="day4" name="day_of_week" value="4">
+                                            <label for="day4">周四</label>
+                                        </div>
+                                        <div class="checkbox-item">
+                                            <input type="checkbox" id="day5" name="day_of_week" value="5">
+                                            <label for="day5">周五</label>
+                                        </div>
+                                        <div class="checkbox-item">
+                                            <input type="checkbox" id="day6" name="day_of_week" value="6">
+                                            <label for="day6">周六</label>
+                                        </div>
+                                        <div class="checkbox-item">
+                                            <input type="checkbox" id="day0" name="day_of_week" value="0">
+                                            <label for="day0">周日</label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="form-group" id="dayOfMonthGroup">
+                                    <label class="form-label" for="day_of_month">每月执行日</label>
+                                    <input type="number" class="form-control" id="day_of_month" name="day_of_month"
+                                           min="1" max="31" placeholder="1-31">
+                                    <small style="color: #5f6368; margin-top: 5px; display: block;">
+                                        请输入1-31之间的数字，超过当月天数将在最后一天执行
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">关联测试任务 <span style="color: red;">*</span></label>
+                            <div class="checkbox-group">
+                                {% for task in test_tasks %}
+                                <div class="checkbox-item">
+                                    <input type="checkbox" id="task{{ task.id }}" name="tasks[]" value="{{ task.id }}">
+                                    <label for="task{{ task.id }}">{{ task.name }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="error-message" id="tasksError"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-check-label" style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="status" name="status" checked>
+                                <span>启用计划</span>
+                            </label>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-outline" onclick="resetPlanForm()">
+                                <i class="fas fa-refresh"></i> 重置
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> 保存计划
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- 执行计划列表 -->
+                <div class="dashboard-card plans-list">
+                    <div class="card-header">
+                        <h2 class="card-title">已配置的执行计划</h2>
+                        <span class="badge">{{ plans|length }} 个计划</span>
+                    </div>
+                    <div class="card-body">
+                        {% if plans %}
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>计划名称</th>
+                                        <th>执行类型</th>
+                                        <th>关联任务数</th>
+                                        <th>状态</th>
+                                        <th>创建时间</th>
+                                        <th>最后更新</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for plan in plans %}
+                                    <tr>
+                                        <td>{{ plan.name }}</td>
+                                        <td>
+                                            <span class="type-badge type-{{ plan.type }}">
+                                                {{ '定时执行' if plan.type == 'scheduled' else '手动执行' }}
+                                            </span>
+                                        </td>
+                                        <td>{{ plan.tasks|length }}</td>
+                                        <td>
+                                            <span class="status-badge status-{{ plan.status }}">
+                                                {{ plan.status|capitalize }}
+                                            </span>
+                                        </td>
+                                        <td>{{ plan.created_at }}</td>
+                                        <td>{{ plan.updated_at }}</td>
+                                        <td class="actions-cell">
+                                            <button class="action-btn execute-btn"
+                                                    onclick="executePlan('{{ plan.id }}')">
+                                                <i class="fas fa-play"></i> 执行
+                                            </button>
+                                            <button class="action-btn edit-btn"
+                                                    onclick="editPlan('{{ plan.id }}')">
+                                                <i class="fas fa-edit"></i> 编辑
+                                            </button>
+                                            <button class="action-btn delete-btn"
+                                                    onclick="deletePlan('{{ plan.id }}')">
+                                                <i class="fas fa-trash"></i> 删除
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div style="text-align: center; padding: 40px 0; color: #5f6368;">
+                            <i class="fas fa-info-circle" style="font-size: 32px; margin-bottom: 15px;"></i>
+                            <p>暂无配置的执行计划，请使用上方表单创建</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 删除确认表单 -->
+    <form id="deleteForm" method="post">
+        {{ csrf_token() }}
+        <input type="hidden" name="action" value="delete">
+        <input type="hidden" name="plan_id" id="deletePlanId">
+    </form>
+
+    <script>
+        // 存储计划数据
+        const executionPlans = {{ plans|tojson }};
+        const testTasks = {{ test_tasks|tojson }};
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化时根据执行类型显示/隐藏定时配置
+            toggleScheduleOptions();
+
+            // 为频率选择添加事件监听
+            document.getElementById('frequency').addEventListener('change', function() {
+                updateScheduleDayOptions();
+            });
+
+            // 初始化时更新日期选项显示
+            updateScheduleDayOptions();
+        });
+
+        // 显示/隐藏定时配置选项
+        function toggleScheduleOptions() {
+            const executionType = document.getElementById('execution_type').value;
+            const scheduleOptions = document.getElementById('scheduleOptions');
+
+            if (executionType === 'scheduled') {
+                scheduleOptions.style.display = 'block';
+            } else {
+                scheduleOptions.style.display = 'none';
+            }
+
+            // 更新日期选项显示
+            updateScheduleDayOptions();
+        }
+
+        // 更新日期选项显示（每周/每月）
+        function updateScheduleDayOptions() {
+            const frequency = document.getElementById('frequency').value;
+            const dayOfWeekGroup = document.getElementById('dayOfWeekGroup');
+            const dayOfMonthGroup = document.getElementById('dayOfMonthGroup');
+
+            if (frequency === 'weekly') {
+                dayOfWeekGroup.style.display = 'block';
+                dayOfMonthGroup.style.display = 'none';
+            } else if (frequency === 'monthly') {
+                dayOfWeekGroup.style.display = 'none';
+                dayOfMonthGroup.style.display = 'block';
+            } else { // daily
+                dayOfWeekGroup.style.display = 'none';
+                dayOfMonthGroup.style.display = 'none';
             }
         }
 
-        // 处理任务选择
-        document.querySelectorAll('input[name="tasks[]"]').forEach(checkbox => {
-            checkbox.checked = plan.tasks.includes(checkbox.value);
+        // 表单验证
+        function validatePlanForm() {
+            let isValid = true;
+            const planName = document.getElementById('plan_name').value.trim();
+            const executionType = document.getElementById('execution_type').value;
+            const executionTime = document.getElementById('execution_time').value;
+            const selectedTasks = document.querySelectorAll('input[name="tasks[]"]:checked');
+
+            // 验证计划名称
+            if (!planName) {
+                document.getElementById('planNameError').textContent = '计划名称不能为空';
+                isValid = false;
+            } else if (planName.length > 50) {
+                document.getElementById('planNameError').textContent = '计划名称不能超过50个字符';
+                isValid = false;
+            } else {
+                document.getElementById('planNameError').textContent = '';
+            }
+
+            // 验证定时任务时间
+            if (executionType === 'scheduled' && !executionTime) {
+                document.getElementById('executionTimeError').textContent = '请设置执行时间';
+                isValid = false;
+            } else {
+                document.getElementById('executionTimeError').textContent = '';
+            }
+
+            // 验证关联任务
+            if (selectedTasks.length === 0) {
+                document.getElementById('tasksError').textContent = '至少需要选择一个测试任务';
+                isValid = false;
+            } else {
+                document.getElementById('tasksError').textContent = '';
+            }
+
+            return isValid;
+        }
+
+        // 编辑计划
+        function editPlan(planId) {
+            const plan = executionPlans.find(p => p.id === planId);
+            if (plan) {
+                // 更新表单标题
+                document.getElementById('formTitle').textContent = '编辑执行计划';
+
+                // 填充表单数据
+                document.getElementById('planAction').value = 'edit';
+                document.getElementById('planId').value = plan.id;
+                document.getElementById('plan_name').value = plan.name || '';
+                document.getElementById('execution_type').value = plan.type || 'manual';
+                document.getElementById('description').value = plan.description || '';
+                document.getElementById('status').checked = plan.status === 'active';
+
+                // 处理定时配置
+                toggleScheduleOptions();
+
+                if (plan.type === 'scheduled' && plan.schedule) {
+                    document.getElementById('frequency').value = plan.schedule.frequency || 'daily';
+                    document.getElementById('execution_time').value = plan.schedule.time || '';
+
+                    // 更新日期选项显示
+                    updateScheduleDayOptions();
+
+                    // 处理每周执行日
+                    if (plan.schedule.frequency === 'weekly' && plan.schedule.day_of_week) {
+                        // 清除现有选中状态
+                        document.querySelectorAll('input[name="day_of_week"]').forEach(checkbox => {
+                            checkbox.checked = false;
+                        });
+
+                        // 设置选中状态（支持多个值）
+                        const days = Array.isArray(plan.schedule.day_of_week)
+                            ? plan.schedule.day_of_week
+                            : [plan.schedule.day_of_week];
+
+                        days.forEach(day => {
+                            const checkbox = document.querySelector(`input[name="day_of_week"][value="${day}"]`);
+                            if (checkbox) checkbox.checked = true;
+                        });
+                    }
+
+                    // 处理每月执行日
+                    if (plan.schedule.frequency === 'monthly' && plan.schedule.day_of_month) {
+                        document.getElementById('day_of_month').value = plan.schedule.day_of_month;
+                    }
+                }
+
+                // 处理关联任务
+                // 先清除现有选中状态
+                document.querySelectorAll('input[name="tasks[]"]').forEach(checkbox => {
+                    checkbox.checked = false;
+                });
+
+                // 设置选中状态
+                if (plan.tasks && plan.tasks.length > 0) {
+                    plan.tasks.forEach(taskId => {
+                        const checkbox = document.querySelector(`input[name="tasks[]"][value="${taskId}"]`);
+                        if (checkbox) checkbox.checked = true;
+                    });
+                }
+
+                // 清空错误提示
+                document.getElementById('planNameError').textContent = '';
+                document.getElementById('executionTimeError').textContent = '';
+                document.getElementById('tasksError').textContent = '';
+            }
+        }
+
+        // 执行计划
+        function executePlan(planId) {
+            if (!confirm('确定要立即执行此计划吗？')) {
+                return;
+            }
+
+            // 这里应该发送执行请求到后端
+            alert('计划执行中...');
+            // 实际项目中应该使用fetch发送请求
+            console.log(`执行计划: ${planId}`);
+        }
+
+        // 删除计划
+        function deletePlan(planId) {
+            const plan = executionPlans.find(p => p.id === planId);
+            if (!plan || !confirm(`确定要删除执行计划「${plan.name}」吗？此操作不可撤销。`)) {
+                return;
+            }
+
+            // 设置要删除的计划ID并提交表单
+            document.getElementById('deletePlanId').value = planId;
+            document.getElementById('deleteForm').submit();
+        }
+
+        // 重置计划表单
+        function resetPlanForm() {
+            // 重置表单标题
+            document.getElementById('formTitle').textContent = '创建执行计划';
+
+            // 重置表单数据
+            document.getElementById('planForm').reset();
+            document.getElementById('planAction').value = 'add';
+            document.getElementById('planId').value = '';
+
+            // 隐藏定时配置
+            toggleScheduleOptions();
+
+            // 清空错误提示
+            document.getElementById('planNameError').textContent = '';
+            document.getElementById('executionTimeError').textContent = '';
+            document.getElementById('tasksError').textContent = '';
+        }
+
+        // 表单提交前验证
+        document.getElementById('planForm').addEventListener('submit', function(e) {
+            if (!validatePlanForm()) {
+                e.preventDefault();
+            }
         });
-
-        // 处理状态
-        document.getElementById('status').checked = plan.status === 'active';
-
-        // 显示模态框
-        showModal('addPlanModal');
-    }
-
-    // 删除计划
-    function deletePlan(planId, planName) {
-        document.getElementById('deletePlanId').value = planId;
-        document.getElementById('deletePlanName').textContent = planName;
-        showModal('deleteConfirmModal');
-    }
-
-    // 页面加载完成后初始化
-    document.addEventListener('DOMContentLoaded', function() {
-        // 初始化任务复选框的样式
-        document.querySelectorAll('.checkbox-group').forEach(group => {
-            group.style.display = 'flex';
-            group.style.alignItems = 'center';
-            group.style.gap = '8px';
-            group.style.marginBottom = '10px';
-        });
-    });
-</script>
-{% endblock %}
+    </script>
+</body>
+</html>
