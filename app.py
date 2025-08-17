@@ -7,6 +7,15 @@ import json
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session
+from flask_login import login_required, current_user
+from datetime import datetime, timedelta
+import uuid
+import json
+import threading
+import time
+from functools import wraps
+
 
 # 初始化Flask应用
 app = Flask(__name__)
@@ -690,15 +699,15 @@ def mock_handler(path):
 
 
 # 接口测试页面
-@app.route('/api_test')
-@login_required
-def api_test():
-    # 获取默认环境
-    default_env = next((e for e in test_environments if e['is_default']), None)
-    return render_template('api_test.html',
-                           username=session['name'],
-                           environments=test_environments,
-                           default_env=default_env)
+# @app.route('/api_test')
+# @login_required
+# def api_test():
+#     # 获取默认环境
+#     default_env = next((e for e in test_environments if e['is_default']), None)
+#     return render_template('api_test.html',
+#                            username=session['name'],
+#                            environments=test_environments,
+#                            default_env=default_env)
 
 
 # 执行计划首页
@@ -871,6 +880,500 @@ def log_details(log_id):
     if not log:
         return jsonify({'status': 'error', 'message': '未找到日志记录'}), 404
     return jsonify(log)
+
+
+
+
+
+### 接口测试模块
+
+###
+
+# 数据存储（实际项目中应使用数据库）
+projects = []
+test_case_groups = []
+test_cases = []
+global_variables = []
+scheduled_tasks = []
+test_reports = []
+# 权限装饰器 - 仅超级管理员和项目管理员可访问
+def project_admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user_role = session.get('role', 'viewer')
+        project_id = kwargs.get('project_id')
+
+        # 超级管理员有所有权限
+        if user_role == 'admin':
+            return f(*args, **kwargs)
+
+        # 检查是否是项目管理员
+        project = next((p for p in projects if p['id'] == project_id), None)
+        if not project or project.get('manager_id') != session.get('user_id'):
+            flash('权限不足：只有超级管理员和项目管理员可以执行此操作', 'error')
+            return redirect(url_for('api_test'))
+
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+# 4.1 项目管理
+@app.route('/api_test', methods=['GET'])
+@login_required
+def api_test():
+    """项目管理页面"""
+    # 搜索功能
+    search_query = request.args.get('search', '').lower()
+    filtered_projects = [
+        p for p in projects
+        if search_query in p['name'].lower()
+    ]
+
+    return render_template('api_test/projects.html',
+                           projects=filtered_projects,
+                           user_role=session.get('role'))
+
+
+@app.route('/api_test/projects', methods=['POST'])
+@login_required
+def create_project():
+    """创建新项目 - 仅管理员可操作"""
+    if session.get('role') not in ['admin', 'operator']:
+        flash('权限不足：只有管理员可以创建项目', 'error')
+        return redirect(url_for('api_test'))
+
+    project = {
+        'id': str(uuid.uuid4())[:8],
+        'name': request.form.get('name'),
+        'version': request.form.get('version', '1.0'),
+        'description': request.form.get('description', ''),
+        'status': 'active',
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'manager_id': session.get('user_id')
+    }
+
+    # 验证必填字段
+    if not project['name']:
+        flash('项目名称不能为空', 'error')
+        return redirect(url_for('api_test'))
+
+    projects.append(project)
+    flash(f'项目 "{project["name"]}" 创建成功', 'success')
+    return redirect(url_for('api_test'))
+
+
+@app.route('/api_test/projects/<project_id>', methods=['GET'])
+@login_required
+def get_project(project_id):
+    """查看项目详情"""
+    project = next((p for p in projects if p['id'] == project_id), None)
+    if not project:
+        flash('项目不存在', 'error')
+        return redirect(url_for('api_test'))
+
+    # 获取项目下的用例组
+    groups = [g for g in test_case_groups if g['project_id'] == project_id]
+
+    return render_template('api_test/project_detail.html',
+                           project=project,
+                           groups=groups)
+
+
+@app.route('/api_test/projects/<project_id>', methods=['PUT'])
+@login_required
+@project_admin_required
+def update_project(project_id):
+    """编辑项目"""
+    project = next((p for p in projects if p['id'] == project_id), None)
+    if not project:
+        return jsonify({'success': False, 'message': '项目不存在'}), 404
+
+    project['name'] = request.json.get('name', project['name'])
+    project['version'] = request.json.get('version', project['version'])
+    project['description'] = request.json.get('description', project['description'])
+    project['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    return jsonify({'success': True, 'message': '项目更新成功'})
+
+
+@app.route('/api_test/projects/<project_id>/status', methods=['PATCH'])
+@login_required
+@project_admin_required
+def toggle_project_status(project_id):
+    """启用/禁用项目"""
+    project = next((p for p in projects if p['id'] == project_id), None)
+    if not project:
+        return jsonify({'success': False, 'message': '项目不存在'}), 404
+
+    project['status'] = 'inactive' if project['status'] == 'active' else 'active'
+    project['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    return jsonify({
+        'success': True,
+        'message': f'项目已{"禁用" if project["status"] == "inactive" else "启用"}',
+        'status': project['status']
+    })
+
+
+@app.route('/api_test/projects/<project_id>', methods=['DELETE'])
+@login_required
+@project_admin_required
+def delete_project(project_id):
+    """删除项目"""
+    global projects
+    project = next((p for p in projects if p['id'] == project_id), None)
+    if not project:
+        return jsonify({'success': False, 'message': '项目不存在'}), 404
+
+    projects = [p for p in projects if p['id'] != project_id]
+    return jsonify({'success': True, 'message': '项目已删除'})
+
+
+# 4.2 用例组管理
+@app.route('/api_test/projects/<project_id>/groups', methods=['POST'])
+@login_required
+def create_test_group(project_id):
+    """创建用例组"""
+    project = next((p for p in projects if p['id'] == project_id), None)
+    if not project:
+        flash('项目不存在', 'error')
+        return redirect(url_for('get_project', project_id=project_id))
+
+    group = {
+        'id': str(uuid.uuid4())[:8],
+        'project_id': project_id,
+        'name': request.form.get('name'),
+        'priority': request.form.get('priority', 'P2'),
+        'description': request.form.get('description', ''),
+        'service': request.form.get('service', ''),
+        'sprint': request.form.get('sprint', ''),
+        'story_id': request.form.get('story_id', ''),
+        'test_case_id': request.form.get('test_case_id', ''),
+        'status': 'active',
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+
+    # 验证必填字段
+    if not group['name']:
+        flash('用例组名称不能为空', 'error')
+        return redirect(url_for('get_project', project_id=project_id))
+
+    if group['priority'] not in ['P1', 'P2']:
+        flash('优先级必须是P1或P2', 'error')
+        return redirect(url_for('get_project', project_id=project_id))
+
+    test_case_groups.append(group)
+    flash(f'用例组 "{group["name"]}" 创建成功', 'success')
+    return redirect(url_for('get_project', project_id=project_id))
+
+
+@app.route('/api_test/groups/<group_id>/copy', methods=['POST'])
+@login_required
+def copy_test_group(group_id):
+    """复制用例组"""
+    original_group = next((g for g in test_case_groups if g['id'] == group_id), None)
+    if not original_group:
+        return jsonify({'success': False, 'message': '用例组不存在'}), 404
+
+    # 创建新用例组
+    new_group = {
+        'id': str(uuid.uuid4())[:8],
+        'project_id': original_group['project_id'],
+        'name': f'Copy - {original_group["name"]}',
+        'priority': original_group['priority'],
+        'description': original_group['description'],
+        'service': original_group['service'],
+        'sprint': original_group['sprint'],
+        'story_id': original_group['story_id'],
+        'test_case_id': original_group['test_case_id'],
+        'status': original_group['status'],
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+
+    test_case_groups.append(new_group)
+
+    # 复制用例组内的接口用例
+    original_cases = [c for c in test_cases if c['group_id'] == group_id]
+    for case in original_cases:
+        new_case = {**case,
+                    'id': str(uuid.uuid4())[:8],
+                    'group_id': new_group['id'],
+                    'name': f'Copy - {case["name"]}',
+                    'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+        test_cases.append(new_case)
+
+    return jsonify({'success': True, 'message': '用例组复制成功'})
+
+
+# 4.3 接口用例管理
+@app.route('/api_test/groups/<group_id>/cases', methods=['GET'])
+@login_required
+def get_test_cases(group_id):
+    """获取用例组下的接口用例"""
+    group = next((g for g in test_case_groups if g['id'] == group_id), None)
+    if not group:
+        flash('用例组不存在', 'error')
+        return redirect(url_for('api_test'))
+
+    project = next((p for p in projects if p['id'] == group['project_id']), None)
+    cases = [c for c in test_cases if c['group_id'] == group_id]
+    # 按sequence和创建时间排序
+    cases.sort(key=lambda x: (x['sequence'], x['created_at']))
+
+    return render_template('api_test/test_cases.html',
+                           project=project,
+                           group=group,
+                           cases=cases)
+
+
+@app.route('/api_test/groups/<group_id>/cases', methods=['POST'])
+@login_required
+def create_test_case(group_id):
+    """创建接口用例"""
+    group = next((g for g in test_case_groups if g['id'] == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': '用例组不存在'}), 404
+
+    # 计算新用例的sequence（最大值+1）
+    group_cases = [c for c in test_cases if c['group_id'] == group_id]
+    max_sequence = max([c['sequence'] for c in group_cases], default=0)
+
+    case = {
+        'id': str(uuid.uuid4())[:8],
+        'group_id': group_id,
+        'name': request.json.get('name'),
+        'method': request.json.get('method', 'GET'),
+        'protocol': request.json.get('protocol', 'HTTP'),
+        'domain': request.json.get('domain', ''),
+        'route': request.json.get('route', ''),
+        'service': request.json.get('service', ''),
+        'sequence': max_sequence + 1,
+        'description': request.json.get('description', ''),
+        'clear_cookies': request.json.get('clear_cookies', False),
+        'status': 'active',
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        # 其他详细信息将在编辑页面补充
+        'headers': [],
+        'params': {'type': 'raw', 'content': ''},
+        'initialization': None,
+        'variables': [],
+        'validations': []
+    }
+
+    # 验证必填字段
+    if not case['name'] or not case['method'] or not case['route']:
+        return jsonify({'success': False, 'message': '用例名称、请求方法和路由为必填项'}), 400
+
+    test_cases.append(case)
+    return jsonify({
+        'success': True,
+        'message': '接口用例创建成功',
+        'case_id': case['id']
+    })
+
+
+# 4.4 接口用例详情编辑
+@app.route('/api_test/cases/<case_id>', methods=['GET'])
+@login_required
+def edit_test_case(case_id):
+    """编辑接口用例详情"""
+    case = next((c for c in test_cases if c['id'] == case_id), None)
+    if not case:
+        flash('接口用例不存在', 'error')
+        return redirect(url_for('api_test'))
+
+    group = next((g for g in test_case_groups if g['id'] == case['group_id']), None)
+    project = next((p for p in projects if p['id'] == group['project_id']), None)
+
+    # 获取环境配置（实际项目中应从环境配置模块获取）
+    environments = [
+        {'id': 'env1', 'name': '开发环境', 'domain': 'http://dev.api.com'},
+        {'id': 'env2', 'name': '测试环境', 'domain': 'http://test.api.com'}
+    ]
+
+    return render_template('api_test/edit_test_case.html',
+                           project=project,
+                           group=group,
+                           case=case,
+                           environments=environments)
+
+
+@app.route('/api_test/cases/<case_id>/params', methods=['PUT'])
+@login_required
+def update_test_case_params(case_id):
+    """更新接口用例请求参数"""
+    case = next((c for c in test_cases if c['id'] == case_id), None)
+    if not case:
+        return jsonify({'success': False, 'message': '接口用例不存在'}), 404
+
+    case['params'] = {
+        'type': request.json.get('type', 'raw'),
+        'content': request.json.get('content', '')
+    }
+    case['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    return jsonify({'success': True, 'message': '请求参数更新成功'})
+
+
+# 4.5 全局参数配置
+@app.route('/api_test/projects/<project_id>/variables', methods=['GET'])
+@login_required
+def get_global_variables(project_id):
+    """获取项目全局参数"""
+    project = next((p for p in projects if p['id'] == project_id), None)
+    if not project:
+        flash('项目不存在', 'error')
+        return redirect(url_for('api_test'))
+
+    # 获取环境列表
+    environments = [
+        {'id': 'env1', 'name': '开发环境', 'domain': 'http://dev.api.com'},
+        {'id': 'env2', 'name': '测试环境', 'domain': 'http://test.api.com'}
+    ]
+
+    # 获取指定环境的变量（如果有）
+    env_id = request.args.get('env_id', environments[0]['id'] if environments else '')
+    variables = [v for v in global_variables if v['project_id'] == project_id and v['env_id'] == env_id]
+
+    return render_template('api_test/global_variables.html',
+                           project=project,
+                           environments=environments,
+                           current_env_id=env_id,
+                           variables=variables)
+
+
+# 4.6 用例执行
+@app.route('/api_test/cases/<case_id>/execute', methods=['POST'])
+@login_required
+def execute_test_case(case_id):
+    """执行单个接口用例"""
+    case = next((c for c in test_cases if c['id'] == case_id), None)
+    if not case:
+        return jsonify({'success': False, 'message': '接口用例不存在'}), 404
+
+    env_id = request.json.get('env_id')
+    # 实际项目中应根据环境获取域名等信息
+    env_domain = 'http://test.api.com'
+
+    # 模拟接口执行
+    start_time = datetime.now()
+    time.sleep(0.5)  # 模拟网络请求耗时
+    end_time = datetime.now()
+
+    # 构建请求URL
+    domain = case['domain'] if case['domain'] else env_domain
+    url = f"{domain}{case['route']}"
+
+    # 模拟执行结果
+    result = {
+        'case_id': case_id,
+        'start_time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
+        'end_time': end_time.strftime('%Y-%m-%d %H:%M:%S'),
+        'duration': (end_time - start_time).total_seconds() * 1000,
+        'request_url': url,
+        'request_method': case['method'],
+        'request_params': case['params'],
+        'response_status': 200,
+        'response_body': '{"status": "success", "data": "mock response"}',
+        'validation_result': 'passed',
+        'status': 'passed'
+    }
+
+    return jsonify({
+        'success': True,
+        'message': '用例执行完成',
+        'result': result
+    })
+
+
+# 4.7 定时任务
+@app.route('/api_test/projects/<project_id>/tasks', methods=['GET'])
+@login_required
+def get_scheduled_tasks(project_id):
+    """获取项目定时任务"""
+    project = next((p for p in projects if p['id'] == project_id), None)
+    if not project:
+        flash('项目不存在', 'error')
+        return redirect(url_for('api_test'))
+
+    tasks = [t for t in scheduled_tasks if t['project_id'] == project_id]
+    groups = [g for g in test_case_groups if g['project_id'] == project_id]
+
+    return render_template('api_test/scheduled_tasks.html',
+                           project=project,
+                           tasks=tasks,
+                           groups=groups)
+
+
+@app.route('/api_test/projects/<project_id>/tasks', methods=['POST'])
+@login_required
+def create_scheduled_task(project_id):
+    """创建定时任务"""
+    project = next((p for p in projects if p['id'] == project_id), None)
+    if not project:
+        return jsonify({'success': False, 'message': '项目不存在'}), 404
+
+    trigger_type = request.json.get('trigger_type', 'specific_time')
+    trigger_value = request.json.get('trigger_value')
+
+    # 计算下次执行时间
+    if trigger_type == 'specific_time':
+        next_execution = trigger_value
+    else:  # interval
+        next_execution = (datetime.now() + timedelta(seconds=int(trigger_value))).strftime('%Y-%m-%d %H:%M:%S')
+
+    task = {
+        'id': str(uuid.uuid4())[:8],
+        'project_id': project_id,
+        'name': request.json.get('name'),
+        'group_ids': request.json.get('group_ids', []),
+        'env_id': request.json.get('env_id'),
+        'trigger_type': trigger_type,
+        'trigger_value': trigger_value,
+        'next_execution': next_execution,
+        'notify_wechat': request.json.get('notify_wechat', False),
+        'notify_dingtalk': request.json.get('notify_dingtalk', False),
+        'notify_email': request.json.get('notify_email', False),
+        'notify_only_failure': request.json.get('notify_only_failure', True),
+        'description': request.json.get('description', ''),
+        'status': 'active',
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+
+    # 验证必填字段
+    if not task['name'] or not task['group_ids'] or not task['env_id'] or not trigger_value:
+        return jsonify({'success': False, 'message': '任务名称、用例组、测试环境和触发条件为必填项'}), 400
+
+    scheduled_tasks.append(task)
+    return jsonify({'success': True, 'message': '定时任务创建成功'})
+
+
+# 4.8 测试报告
+@app.route('/api_test/projects/<project_id>/reports', methods=['GET'])
+@login_required
+def get_test_reports(project_id):
+    """获取测试报告"""
+    project = next((p for p in projects if p['id'] == project_id), None)
+    if not project:
+        flash('项目不存在', 'error')
+        return redirect(url_for('api_test'))
+
+    report_type = request.args.get('type', 'manual')
+    reports = [r for r in test_reports if r['project_id'] == project_id and r['type'] == report_type]
+
+    return render_template('api_test/test_reports.html',
+                           project=project,
+                           reports=reports,
+                           report_type=report_type)
+
 
 # 启动应用
 if __name__ == '__main__':
