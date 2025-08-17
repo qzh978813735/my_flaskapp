@@ -46,8 +46,8 @@
 
         <!-- 接口测试 (假设路由函数为api_test) -->
         <li class="menu-item">
-            <a href="{{ url_for('api_test') }}" class="menu-link {% if request.path.startswith('/api_test') %}active{% endif %}">
-                <i class="fas fa-code menu-icon"></i>
+            <a href="{{ url_for('api_test') }}" class="menu-link {% if request.endpoint == 'api_test' %}active{% endif %}">
+                <i class="fas fa-plug menu-icon"></i>
                 <span class="menu-text">接口测试</span>
             </a>
         </li>

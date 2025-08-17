@@ -889,13 +889,17 @@ def log_details(log_id):
 
 ###
 
-# 数据存储（实际项目中应使用数据库）
+### 接口测试模块 - 后端实现 ###
+
+# 数据存储结构（实际项目中应使用数据库）
 projects = []
 test_case_groups = []
 test_cases = []
 global_variables = []
 scheduled_tasks = []
 test_reports = []
+
+
 # 权限装饰器 - 仅超级管理员和项目管理员可访问
 def project_admin_required(f):
     @wraps(f)
@@ -919,18 +923,15 @@ def project_admin_required(f):
 
 
 # 4.1 项目管理
-@app.route('/api_test', methods=['GET'])
+@app.route('/api_test/projects', methods=['GET'])
 @login_required
-def api_test():
-    """项目管理页面"""
-    # 搜索功能
-    search_query = request.args.get('search', '').lower()
-    filtered_projects = [
-        p for p in projects
-        if search_query in p['name'].lower()
-    ]
+def api_test_projects():
+    """项目管理首页"""
+    search = request.args.get('search', '').strip()
+    filtered_projects = [p for p in projects if search.lower() in p['name'].lower()] if search else projects
 
     return render_template('api_test/projects.html',
+                           username=session['name'],
                            projects=filtered_projects,
                            user_role=session.get('role'))
 
@@ -941,7 +942,7 @@ def create_project():
     """创建新项目 - 仅管理员可操作"""
     if session.get('role') not in ['admin', 'operator']:
         flash('权限不足：只有管理员可以创建项目', 'error')
-        return redirect(url_for('api_test'))
+        return redirect(url_for('api_test_projects'))
 
     project = {
         'id': str(uuid.uuid4())[:8],
@@ -951,17 +952,17 @@ def create_project():
         'status': 'active',
         'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'manager_id': session.get('user_id')
+        'manager_id': session.get('username')
     }
 
     # 验证必填字段
     if not project['name']:
         flash('项目名称不能为空', 'error')
-        return redirect(url_for('api_test'))
+        return redirect(url_for('api_test_projects'))
 
     projects.append(project)
     flash(f'项目 "{project["name"]}" 创建成功', 'success')
-    return redirect(url_for('api_test'))
+    return redirect(url_for('api_test_projects'))
 
 
 @app.route('/api_test/projects/<project_id>', methods=['GET'])
@@ -971,7 +972,7 @@ def get_project(project_id):
     project = next((p for p in projects if p['id'] == project_id), None)
     if not project:
         flash('项目不存在', 'error')
-        return redirect(url_for('api_test'))
+        return redirect(url_for('api_test_projects'))
 
     # 获取项目下的用例组
     groups = [g for g in test_case_groups if g['project_id'] == project_id]
@@ -1119,7 +1120,7 @@ def get_test_cases(group_id):
     group = next((g for g in test_case_groups if g['id'] == group_id), None)
     if not group:
         flash('用例组不存在', 'error')
-        return redirect(url_for('api_test'))
+        return redirect(url_for('api_test_projects'))
 
     project = next((p for p in projects if p['id'] == group['project_id']), None)
     cases = [c for c in test_cases if c['group_id'] == group_id]
@@ -1187,7 +1188,7 @@ def edit_test_case(case_id):
     case = next((c for c in test_cases if c['id'] == case_id), None)
     if not case:
         flash('接口用例不存在', 'error')
-        return redirect(url_for('api_test'))
+        return redirect(url_for('api_test_projects'))
 
     group = next((g for g in test_case_groups if g['id'] == case['group_id']), None)
     project = next((p for p in projects if p['id'] == group['project_id']), None)
@@ -1230,7 +1231,7 @@ def get_global_variables(project_id):
     project = next((p for p in projects if p['id'] == project_id), None)
     if not project:
         flash('项目不存在', 'error')
-        return redirect(url_for('api_test'))
+        return redirect(url_for('api_test_projects'))
 
     # 获取环境列表
     environments = [
@@ -1301,7 +1302,7 @@ def get_scheduled_tasks(project_id):
     project = next((p for p in projects if p['id'] == project_id), None)
     if not project:
         flash('项目不存在', 'error')
-        return redirect(url_for('api_test'))
+        return redirect(url_for('api_test_projects'))
 
     tasks = [t for t in scheduled_tasks if t['project_id'] == project_id]
     groups = [g for g in test_case_groups if g['project_id'] == project_id]
@@ -1364,7 +1365,7 @@ def get_test_reports(project_id):
     project = next((p for p in projects if p['id'] == project_id), None)
     if not project:
         flash('项目不存在', 'error')
-        return redirect(url_for('api_test'))
+        return redirect(url_for('api_test_projects'))
 
     report_type = request.args.get('type', 'manual')
     reports = [r for r in test_reports if r['project_id'] == project_id and r['type'] == report_type]
@@ -1373,7 +1374,6 @@ def get_test_reports(project_id):
                            project=project,
                            reports=reports,
                            report_type=report_type)
-
 
 # 启动应用
 if __name__ == '__main__':
