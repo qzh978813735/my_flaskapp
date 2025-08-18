@@ -1,211 +1,272 @@
 {% extends "environment_config/base.html" %}
 
-{% block env_content %}
+{% block title %}DB配置管理{% endblock %}
+
+{% block environment_content %}
 <div class="card">
     <div class="card-header">
-        <h2 class="card-title">环境配置管理</h2>
-        <span>管理系统所需的各类环境配置信息</span>
+        <div class="row">
+            <div class="col-md-6">
+                <h4 class="mb-0">DB配置管理</h4>
+            </div>
+            <div class="col-md-6 text-right">
+                <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addDbConfigModal">
+                    新增DB配置
+                </button>
+            </div>
+        </div>
     </div>
     <div class="card-body">
-        <p>请从左侧子菜单选择具体配置项</p>
+        <!-- DB配置列表 -->
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead class="thead-dark">
+                    <tr>
+                        <th>DB名称</th>
+                        <th>DB类型</th>
+                        <th>描述</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="dbConfigTableBody">
+                    {% for db in db_configs %}
+                    <tr>
+                        <td>{{ db.name }}</td>
+                        <td>{{ db.type }}</td>
+                        <td>{{ db.description }}</td>
+                        <td>
+                            {% if db.status == 'active' %}
+                            <span class="badge badge-success">启用</span>
+                            {% else %}
+                            <span class="badge badge-danger">禁用</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-primary mr-2" data-toggle="modal" data-target="#editDbConfigModal" data-db-id="{{ db.id }}">编辑</button>
+                            <button type="button" class="btn btn-sm btn-info mr-2" onclick="viewDbConnectionInfo('{{ db.id }}')">连接信息</button>
+                            <button type="button" class="btn btn-sm {% if db.status == 'active' %}btn-danger{% else %}btn-success{% endif %}" onclick="toggleDbConfigStatus('{{ db.id }}', '{{ db.status }}')">
+                                {% if db.status == 'active' %}禁用{% else %}启用{% endif %}
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
-<!-- 添加/编辑数据库配置模态框 -->
-<div class="modal-backdrop" id="addDatabaseModal">
-    <div class="modal">
-        <div class="modal-header">
-            <h3 class="modal-title" id="databaseModalTitle">添加数据库配置</h3>
-            <button class="modal-close" onclick="hideModal('addDatabaseModal')">&times;</button>
-        </div>
-        <div class="modal-body">
-            <form id="databaseForm" method="POST" action="{{ url_for('database_config') }}">
-                <input type="hidden" id="db_id" name="db_id">
-                
-                <div class="form-grid">
+<!-- 新增DB配置模态框 -->
+<div class="modal fade" id="addDbConfigModal" tabindex="-1" role="dialog" aria-labelledby="addDbConfigModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addDbConfigModalLabel">新增DB配置</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="addDbConfigForm">
                     <div class="form-group">
-                        <label class="form-label" for="name">配置名称 <span style="color: red;">*</span></label>
-                        <input type="text" class="form-control" id="name" name="name" required placeholder="例如：测试库-MySQL">
+                        <label for="dbConfigName">DB名称</label>
+                        <input type="text" class="form-control" id="dbConfigName" required>
                     </div>
-                    
                     <div class="form-group">
-                        <label class="form-label" for="type">数据库类型 <span style="color: red;">*</span></label>
-                        <select class="form-select" id="type" name="type" required>
-                            <option value="">请选择数据库类型</option>
-                            <option value="mysql">MySQL</option>
-                            <option value="postgresql">PostgreSQL</option>
-                            <option value="oracle">Oracle</option>
-                            <option value="sqlserver">SQL Server</option>
-                            <option value="mongodb">MongoDB</option>
+                        <label for="dbConfigType">DB类型</label>
+                        <select class="form-control" id="dbConfigType" required>
+                            <option value="MongoDB">MongoDB</option>
+                            <option value="MySQL">MySQL</option>
                         </select>
                     </div>
-                    
                     <div class="form-group">
-                        <label class="form-label" for="host">主机地址 <span style="color: red;">*</span></label>
-                        <input type="text" class="form-control" id="host" name="host" required placeholder="例如：localhost 或 IP地址">
+                        <label for="dbConfigDescription">描述</label>
+                        <textarea class="form-control" id="dbConfigDescription" rows="3"></textarea>
                     </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label" for="port">端口 <span style="color: red;">*</span></label>
-                        <input type="number" class="form-control" id="port" name="port" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label" for="dbname">数据库名 <span style="color: red;">*</span></label>
-                        <input type="text" class="form-control" id="dbname" name="dbname" required placeholder="要连接的数据库名称">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label" for="username">用户名 <span style="color: red;">*</span></label>
-                        <input type="text" class="form-control" id="username" name="username" required placeholder="数据库登录用户名">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label" for="password">密码</label>
-                        <input type="password" class="form-control" id="password" name="password" placeholder="数据库登录密码">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label" for="charset">字符集</label>
-                        <input type="text" class="form-control" id="charset" name="charset" placeholder="例如：utf8mb4" value="utf8mb4">
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="description">描述</label>
-                    <textarea class="form-control" id="description" name="description" rows="3" placeholder="可选：添加备注信息"></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-check-label">
-                        <input type="checkbox" id="status" name="status" checked> 启用该配置
-                    </label>
-                </div>
-                
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline" onclick="hideModal('addDatabaseModal')">取消</button>
-                    <button type="submit" class="btn btn-primary">保存配置</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 连接测试结果模态框 -->
-<div class="modal-backdrop" id="connectionTestModal">
-    <div class="modal" style="max-width: 500px;">
-        <div class="modal-header">
-            <h3 class="modal-title">连接测试结果</h3>
-            <button class="modal-close" onclick="hideModal('connectionTestModal')">&times;</button>
-        </div>
-        <div class="modal-body" id="testResultContent">
-            <div style="text-align: center; padding: 20px;">
-                <i class="fas fa-spinner fa-spin" style="font-size: 24px; color: #1a73e8;"></i>
-                <p>测试连接中...</p>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitAddDbConfig()">提交</button>
             </div>
         </div>
-        <div class="modal-footer">
-            <button class="btn btn-primary" onclick="hideModal('connectionTestModal')">关闭</button>
-        </div>
     </div>
 </div>
 
+<!-- 编辑DB配置模态框 -->
+<div class="modal fade" id="editDbConfigModal" tabindex="-1" role="dialog" aria-labelledby="editDbConfigModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editDbConfigModalLabel">编辑DB配置</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="editDbConfigForm">
+                    <input type="hidden" id="editDbConfigId">
+                    <div class="form-group">
+                        <label for="editDbConfigName">DB名称</label>
+                        <input type="text" class="form-control" id="editDbConfigName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editDbConfigType">DB类型</label>
+                        <select class="form-control" id="editDbConfigType" required>
+                            <option value="MongoDB">MongoDB</option>
+                            <option value="MySQL">MySQL</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="editDbConfigDescription">描述</label>
+                        <textarea class="form-control" id="editDbConfigDescription" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitEditDbConfig()">提交</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
 <script>
-    // 数据库类型对应的默认端口
-    const defaultPorts = {
-        'mysql': 3306,
-        'postgresql': 5432,
-        'oracle': 1521,
-        'sqlserver': 1433,
-        'mongodb': 27017
-    };
-    
-    // 监听数据库类型变化，自动填充默认端口
-    document.getElementById('type').addEventListener('change', function() {
-        const selectedType = this.value;
-        if (selectedType && defaultPorts[selectedType]) {
-            document.getElementById('port').value = defaultPorts[selectedType];
-        }
+    // 查看DB连接信息
+    function viewDbConnectionInfo(dbId) {
+        // 跳转到连接信息页面
+        window.location.href = '{{ url_for('db_connection_info', db_id='') }}' + dbId;
+    }
+
+    // 监听编辑按钮点击事件
+    document.querySelectorAll('[data-target="#editDbConfigModal"]').forEach(button => {
+        button.addEventListener('click', function() {
+            const dbId = this.getAttribute('data-db-id');
+            // 这里应该通过API获取DB配置详情
+            // 为简化示例，我们直接从页面数据中查找
+            const rows = document.querySelectorAll('#dbConfigTableBody tr');
+            rows.forEach(row => {
+                const rowDbId = row.querySelector('button[data-db-id]').getAttribute('data-db-id');
+                if (rowDbId === dbId) {
+                    document.getElementById('editDbConfigId').value = dbId;
+                    document.getElementById('editDbConfigName').value = row.cells[0].textContent;
+                    document.getElementById('editDbConfigType').value = row.cells[1].textContent;
+                    document.getElementById('editDbConfigDescription').value = row.cells[2].textContent;
+                }
+            });
+        });
     });
-    
-    // 编辑数据库配置
-    function editDatabase(dbId) {
-        // 模拟获取数据库配置数据
-        const dbConfig = {{ databases|tojson }}.find(db => db.id === dbId);
-        if (!dbConfig) return;
-        
-        // 填充表单数据
-        document.getElementById('databaseModalTitle').textContent = '编辑数据库配置';
-        document.getElementById('db_id').value = dbConfig.id;
-        document.getElementById('name').value = dbConfig.name;
-        document.getElementById('type').value = dbConfig.type;
-        document.getElementById('host').value = dbConfig.host;
-        document.getElementById('port').value = dbConfig.port;
-        document.getElementById('dbname').value = dbConfig.dbname;
-        document.getElementById('username').value = dbConfig.username;
-        document.getElementById('password').value = dbConfig.password || '';
-        document.getElementById('charset').value = dbConfig.charset || 'utf8mb4';
-        document.getElementById('description').value = dbConfig.description || '';
-        document.getElementById('status').checked = dbConfig.status === 'active';
-        
-        // 显示模态框
-        showModal('addDatabaseModal');
-    }
-    
-    // 测试数据库连接
-    function testConnection(dbId) {
-        // 显示加载状态
-        document.getElementById('testResultContent').innerHTML = `
-            <div style="text-align: center; padding: 20px;">
-                <i class="fas fa-spinner fa-spin" style="font-size: 24px; color: #1a73e8;"></i>
-                <p>正在测试连接...</p>
-            </div>
-        `;
-        
-        // 显示模态框
-        showModal('connectionTestModal');
-        
-        // 模拟异步测试连接
-        setTimeout(() => {
-            // 实际项目中应发送AJAX请求到后端测试连接
-            const result = {
-                success: Math.random() > 0.2, // 80%概率模拟连接成功
-                message: Math.random() > 0.2 ? '连接成功' : '连接失败：无法访问数据库服务器'
+
+    // 提交新增DB配置表单
+    function submitAddDbConfig() {
+        const form = document.getElementById('addDbConfigForm');
+        if (form.checkValidity()) {
+            const dbConfigData = {
+                name: document.getElementById('dbConfigName').value,
+                type: document.getElementById('dbConfigType').value,
+                description: document.getElementById('dbConfigDescription').value
             };
-            
-            // 更新结果内容
-            if (result.success) {
-                document.getElementById('testResultContent').innerHTML = `
-                    <div style="text-align: center; padding: 20px;">
-                        <i class="fas fa-check-circle" style="font-size: 48px; color: #137333; margin-bottom: 15px;"></i>
-                        <h4 style="color: #137333; margin-bottom: 10px;">连接成功</h4>
-                        <p>数据库连接测试通过，可以正常访问。</p>
-                    </div>
-                `;
-            } else {
-                document.getElementById('testResultContent').innerHTML = `
-                    <div style="text-align: center; padding: 20px;">
-                        <i class="fas fa-times-circle" style="font-size: 48px; color: #d93025; margin-bottom: 15px;"></i>
-                        <h4 style="color: #d93025; margin-bottom: 10px;">连接失败</h4>
-                        <p>${result.message}</p>
-                        <p style="margin-top: 10px; font-size: 14px; color: #5f6368;">
-                            请检查：<br>
-                            1. 数据库服务是否正常运行<br>
-                            2. 主机地址和端口是否正确<br>
-                            3. 用户名和密码是否正确<br>
-                            4. 网络连接是否通畅
-                        </p>
-                    </div>
-                `;
-            }
-        }, 1500);
+
+            // 发送API请求
+            fetch('{{ url_for('create_db_config') }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(dbConfigData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('DB配置创建成功');
+                    // 刷新页面或更新表格
+                    location.reload();
+                } else {
+                    alert('DB配置创建失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('发生错误，请重试');
+            });
+        } else {
+            form.reportValidity();
+        }
     }
-    
-    // 删除数据库配置
-    function deleteDatabase(dbId) {
-        if (confirm('确定要删除该数据库配置吗？此操作不可撤销。')) {
-            // 实际项目中应发送AJAX请求到后端删除配置
-            window.location.href = "{{ url_for('database_config') }}?action=delete&db_id=" + dbId;
+
+    // 提交编辑DB配置表单
+    function submitEditDbConfig() {
+        const form = document.getElementById('editDbConfigForm');
+        if (form.checkValidity()) {
+            const dbConfigData = {
+                id: document.getElementById('editDbConfigId').value,
+                name: document.getElementById('editDbConfigName').value,
+                type: document.getElementById('editDbConfigType').value,
+                description: document.getElementById('editDbConfigDescription').value
+            };
+
+            // 发送API请求
+            fetch('{{ url_for('update_db_config') }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(dbConfigData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('DB配置更新成功');
+                    // 刷新页面或更新表格
+                    location.reload();
+                } else {
+                    alert('DB配置更新失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('发生错误，请重试');
+            });
+        } else {
+            form.reportValidity();
+        }
+    }
+
+    // 禁用/启用DB配置
+    function toggleDbConfigStatus(dbId, currentStatus) {
+        const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+        const actionText = newStatus === 'active' ? '启用' : '禁用';
+
+        if (confirm(`确定要${actionText}此DB配置吗？`)) {
+            // 发送API请求
+            fetch('{{ url_for('toggle_db_config_status') }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    id: dbId,
+                    status: newStatus
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`DB配置已${actionText}成功`);
+                    // 刷新页面或更新表格
+                    location.reload();
+                } else {
+                    alert(`DB配置${actionText}失败: ` + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('发生错误，请重试');
+            });
         }
     }
 </script>

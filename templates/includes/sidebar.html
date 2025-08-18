@@ -28,9 +28,9 @@
             </a>
         </li>
 
-        <!-- 环境配置 (假设路由函数为environment_config) -->
+        <!-- 环境配置 -->
         <li class="menu-item">
-            <a href="{{ url_for('environment_config') }}" class="menu-link {% if request.path.startswith('/environment_config') %}active{% endif %}">
+            <a href="{{ url_for('environment_config_home') }}" class="menu-link {% if request.path.startswith('/environment_config') %}active{% endif %}" onclick="handleEnvironmentConfigClick(event)">
                 <i class="fas fa-cogs menu-icon"></i>
                 <span class="menu-text">环境配置</span>
             </a>
@@ -51,14 +51,6 @@
                 <span class="menu-text">接口测试</span>
             </a>
         </li>
-
-        <!-- 执行计划 (假设路由函数为execution_plan) -->
-<!--        <li class="menu-item">-->
-<!--            <a href="{{ url_for('execution_plan') }}" class="menu-link {% if request.path.startswith('/execution_plan') %}active{% endif %}">-->
-<!--                <i class="fas fa-tasks menu-icon"></i>-->
-<!--                <span class="menu-text">执行计划</span>-->
-<!--            </a>-->
-<!--        </li>-->
         <!-- 修改为 -->
         <li class="menu-item">
             <a href="{{ url_for('execution_plan') }}" class="menu-link {% if request.path.startswith('/execution_plan') %}active{% endif %}">
@@ -68,3 +60,16 @@
         </li>
     </ul>
 </aside>
+
+<script>
+function handleEnvironmentConfigClick(event) {
+    // 确保链接正常工作
+    const href = event.currentTarget.getAttribute('href');
+    if (href && href !== '#' && href !== 'javascript:void(0)') {
+        // 如果是正常链接，则允许默认行为
+        return true;
+    }
+    // 如果链接无效，则阻止默认行为
+    event.preventDefault();
+}
+</script>

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>仪表盘 - 自动化测试平台</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
         * {
             margin: 0;
@@ -262,7 +263,7 @@
                 <div class="user-info">
                     <div class="user-avatar">{{ username[0].upper() }}</div>
                     <span>{{ username }}</span>
-                    <button class="logout-btn" onclick="window.location.href='{{ url_for('logout') }}'">
+                    <button class="logout-btn" onclick="window.location.href='{{ url_for('logout') }}';"></button>
                         <i class="fas fa-sign-out-alt"></i> 退出登录
                     </button>
                 </div>
@@ -313,19 +314,19 @@
         </main>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.slim.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.1/umd/popper.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script>
-        // 为菜单添加点击事件
-        document.querySelectorAll('.menu-link').forEach(link => {
-            link.addEventListener('click', function(e) {
-                // 移除所有菜单的active类
-                document.querySelectorAll('.menu-link').forEach(item => {
-                    item.classList.remove('active');
-                });
-                // 给当前点击的菜单添加active类
-                this.classList.add('active');
-
-                // 这里可以添加页面内容切换逻辑
-                // e.preventDefault(); // 如果需要阻止默认跳转行为
+        // 页面加载时设置当前菜单为激活状态
+        document.addEventListener('DOMContentLoaded', function() {
+            const currentPath = window.location.pathname;
+            document.querySelectorAll('.menu-link').forEach(link => {
+                // 对于环境配置菜单，检查当前路径是否包含'environment_config'
+                if ((link.getAttribute('href') === currentPath || link.getAttribute('href') === currentPath + '/') ||
+                    (link.getAttribute('href').includes('environment_config') && currentPath.includes('environment_config'))) {
+                    link.classList.add('active');
+                }
             });
         });
     </script>

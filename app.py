@@ -1,13 +1,14 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_wtf.csrf import CSRFProtect
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 import json
 import smtplib
+import threading
+import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from datetime import datetime, timedelta
 import uuid
@@ -26,6 +27,7 @@ csrf = CSRFProtect(app)
 # 全局变量初始化（修复NameError）
 mock_interfaces = {}  # MOCK接口配置
 database_configs = []  # 数据库配置
+db_connections = []  # 数据库连接信息
 test_environments = []  # 测试环境配置
 execution_plans = []  # 执行计划
 execution_logs = []  # 执行日志
@@ -37,6 +39,104 @@ email_config = {  # 邮件配置默认值
     'use_tls': True
 }
 email_recipients = []  # 邮件收件人
+
+# 初始化一些示例数据
+test_environments.extend([
+    {
+        'id': str(uuid.uuid4())[:8],
+        'name': '开发环境',
+        'protocol': 'http',
+        'domain': 'dev.example.com',
+        'description': '开发人员使用的环境',
+        'status': 'active',
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    },
+    {
+        'id': str(uuid.uuid4())[:8],
+        'name': '测试环境',
+        'protocol': 'http',
+        'domain': 'test.example.com',
+        'description': '测试人员使用的环境',
+        'status': 'active',
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    },
+    {
+        'id': str(uuid.uuid4())[:8],
+        'name': '预发布环境',
+        'protocol': 'https',
+        'domain': 'pre.example.com',
+        'description': '上线前的预发布环境',
+        'status': 'active',
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    },
+    {
+        'id': str(uuid.uuid4())[:8],
+        'name': '生产环境',
+        'protocol': 'https',
+        'domain': '${service}.example.com',
+        'description': '正式生产环境',
+        'status': 'inactive',
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+])
+
+database_configs.extend([
+    {
+        'id': str(uuid.uuid4())[:8],
+        'name': '用户数据库',
+        'type': 'MySQL',
+        'description': '存储用户信息的数据库',
+        'status': 'active',
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    },
+    {
+        'id': str(uuid.uuid4())[:8],
+        'name': '产品数据库',
+        'type': 'MongoDB',
+        'description': '存储产品信息的数据库',
+        'status': 'active',
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+])
+
+# 为简化示例，我们添加一些示例DB连接信息
+env_id = test_environments[0]['id']  # 开发环境
+db_id = database_configs[0]['id']  # 用户数据库
+db_connections.append({
+    'id': str(uuid.uuid4())[:8],
+    'db_id': db_id,
+    'env_id': env_id,
+    'host': 'localhost',
+    'port': 3306,
+    'user': 'root',
+    'password': 'password',
+    'db_name': 'user_db',
+    'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+})
+
+# 添加MongoDB连接信息
+env_id = test_environments[1]['id']  # 测试环境
+db_id = database_configs[1]['id']  # 产品数据库
+db_connections.append({
+    'id': str(uuid.uuid4())[:8],
+    'db_id': db_id,
+    'env_id': env_id,
+    'host': 'localhost',
+    'port': 27017,
+    'user': '',
+    'password': '',
+    'db_name': 'product_db',
+    'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+})
+
 users = {  # 用户数据
     'admin': {
         'password': 'admin123',  # 实际项目需哈希存储
@@ -236,204 +336,6 @@ def user_management():
                            username=session['name'],
                            users=users,
                            current_user_role=session['role'])
-
-
-# 环境配置首页
-@app.route('/environment_config')
-@login_required
-def environment_config():
-    return render_template('environment_config/base.html',
-                           username=session['name'])
-
-
-# 数据库配置路由
-@app.route('/environment_config', methods=['GET', 'POST'])
-@login_required
-def database_config():
-    global database_configs
-
-    if request.method == 'POST':
-        config_id = request.form.get('config_id', '').strip()
-        name = request.form.get('name', '').strip()
-        db_type = request.form.get('db_type', '').strip()
-        host = request.form.get('host', '').strip()
-        port = request.form.get('port', '').strip()
-        database = request.form.get('database', '').strip()
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '').strip()
-
-        # 验证
-        if not all([name, db_type, host, port, database, username]):
-            flash('带*的字段为必填项', 'error')
-            return redirect(url_for('database_config'))
-
-        # 检查名称唯一性
-        for config in database_configs:
-            if config['id'] != config_id and config['name'] == name:
-                flash(f'数据库配置名称 "{name}" 已存在', 'error')
-                return redirect(url_for('database_config'))
-
-        config_data = {
-            'name': name,
-            'db_type': db_type,
-            'host': host,
-            'port': port,
-            'database': database,
-            'username': username,
-            'password': password,
-            'description': request.form.get('description', '').strip(),
-            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-
-        if config_id:
-            # 编辑现有配置
-            for i, config in enumerate(database_configs):
-                if config['id'] == config_id:
-                    config_data['id'] = config_id
-                    config_data['created_at'] = config['created_at']
-                    database_configs[i] = config_data
-                    flash(f'数据库配置 "{name}" 已更新', 'success')
-                    return redirect(url_for('database_config'))
-            flash('未找到指定的数据库配置', 'error')
-        else:
-            # 添加新配置
-            config_data['id'] = str(uuid.uuid4())[:8]
-            config_data['created_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            database_configs.append(config_data)
-            flash(f'数据库配置 "{name}" 已创建', 'success')
-
-        return redirect(url_for('database_config'))
-
-    # 处理删除操作
-    if request.method == 'GET' and request.args.get('action') == 'delete':
-        config_id = request.args.get('config_id', '').strip()
-        if config_id:
-            original_length = len(database_configs)
-            database_configs = [c for c in database_configs if c['id'] != config_id]
-            if len(database_configs) < original_length:
-                flash('数据库配置已删除', 'success')
-            else:
-                flash('未找到指定的数据库配置', 'error')
-        return redirect(url_for('database_config'))
-
-    return render_template('environment_config/database_config.html',
-                           username=session['name'],
-                           databases=database_configs)
-
-
-# 测试环境管理路由
-@app.route('/test_environment_management', methods=['GET', 'POST'])
-@login_required
-def test_environment_management():
-    global test_environments
-
-    # 处理GET请求操作
-    if request.method == 'GET':
-        action = request.args.get('action', '').strip()
-        env_id = request.args.get('env_id', '').strip()
-
-        if action == 'set_default' and env_id:
-            # 设置默认环境
-            found = False
-            for env in test_environments:
-                if env['id'] == env_id:
-                    # 先取消所有环境的默认状态
-                    for e in test_environments:
-                        e['is_default'] = False
-                    env['is_default'] = True
-                    flash(f'环境 "{env["name"]}" 已设为默认环境', 'success')
-                    found = True
-                    break
-            if not found:
-                flash('未找到指定的测试环境', 'error')
-            return redirect(url_for('test_environment_management'))
-
-        if action == 'delete' and env_id:
-            # 删除环境
-            original_length = len(test_environments)
-            test_environments = [env for env in test_environments if env['id'] != env_id]
-            if len(test_environments) < original_length:
-                flash('测试环境已删除', 'success')
-            else:
-                flash('未找到指定的测试环境', 'error')
-            return redirect(url_for('test_environment_management'))
-
-    # 处理POST请求（添加/编辑环境）
-    if request.method == 'POST':
-        env_id = request.form.get('env_id', '').strip()
-        name = request.form.get('name', '').strip()
-        code = request.form.get('code', '').strip()
-        base_url = request.form.get('base_url', '').strip()
-
-        # 验证必填字段
-        if not name:
-            flash('环境名称不能为空', 'error')
-            return redirect(url_for('test_environment_management'))
-        if not code:
-            flash('环境编码不能为空', 'error')
-            return redirect(url_for('test_environment_management'))
-        if not base_url:
-            flash('基础URL不能为空', 'error')
-            return redirect(url_for('test_environment_management'))
-
-        # 验证唯一性
-        for env in test_environments:
-            if env['id'] != env_id and env['name'] == name:
-                flash(f'环境名称 "{name}" 已存在', 'error')
-                return redirect(url_for('test_environment_management'))
-            if env['id'] != env_id and env['code'] == code:
-                flash(f'环境编码 "{code}" 已存在', 'error')
-                return redirect(url_for('test_environment_management'))
-
-        # 准备环境数据
-        env_data = {
-            'name': name,
-            'code': code,
-            'base_url': base_url,
-            'db_config_id': request.form.get('db_config_id', '').strip(),
-            'owner': request.form.get('owner', '').strip(),
-            'contact': request.form.get('contact', '').strip(),
-            'description': request.form.get('description', '').strip(),
-            'status': 'active' if request.form.get('status') else 'inactive',
-            'is_default': request.form.get('is_default') == 'on',
-            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-
-        # 如果设置为默认环境，取消其他环境的默认状态
-        if env_data['is_default']:
-            for env in test_environments:
-                env['is_default'] = False
-
-        if env_id:
-            # 编辑现有环境
-            for i, env in enumerate(test_environments):
-                if env['id'] == env_id:
-                    env_data['id'] = env_id
-                    env_data['created_at'] = env['created_at']  # 保留创建时间
-                    test_environments[i] = env_data
-                    flash(f'测试环境 "{name}" 已更新', 'success')
-                    return redirect(url_for('test_environment_management'))
-            flash('未找到指定的测试环境', 'error')
-        else:
-            # 添加新环境
-            env_data['id'] = str(uuid.uuid4())[:8]
-            env_data['created_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            test_environments.append(env_data)
-            flash(f'测试环境 "{name}" 已创建', 'success')
-
-        return redirect(url_for('test_environment_management'))
-
-    # 准备页面数据
-    db_configs = database_configs
-    environments_with_db = []
-    for env in test_environments:
-        db_name = next((db['name'] for db in db_configs if db['id'] == env['db_config_id']), None)
-        environments_with_db.append({**env, 'db_config_name': db_name})
-
-    return render_template('environment_config/test_environment_management.html',
-                           username=session['name'],
-                           environments=environments_with_db,
-                           databases=db_configs)
 
 
 # 邮件配置路由
@@ -921,6 +823,10 @@ def project_admin_required(f):
 
     return decorated_function
 
+@app.route('/api_test/')
+@login_required
+def api_test():
+    return render_template('api_test.html', username=session['name'])
 
 # 4.1 项目管理
 @app.route('/api_test/projects', methods=['GET'])
@@ -1374,6 +1280,258 @@ def get_test_reports(project_id):
                            project=project,
                            reports=reports,
                            report_type=report_type)
+
+# 环境配置相关路由
+# 环境配置首页
+@app.route('/environment_config')
+@login_required
+@admin_required
+def environment_config_home():
+    # 默认重定向到测试环境管理页面
+    return redirect(url_for('test_environment_management'))
+
+
+# 测试环境管理
+@app.route('/environment_config/test_environment', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def test_environment_management():
+    global test_environments
+
+    if request.method == 'POST':
+        env_id = request.json.get('id')
+        name = request.json.get('name')
+        protocol = request.json.get('protocol')
+        domain = request.json.get('domain')
+        description = request.json.get('description')
+
+        # 验证必填字段
+        if not name or not protocol or not domain:
+            return jsonify({'success': False, 'message': '环境名称、HTTP协议和服务域名为必填项'}), 400
+
+        # 检查名称唯一性
+        for env in test_environments:
+            if env['id'] != env_id and env['name'] == name:
+                return jsonify({'success': False, 'message': f'环境名称 "{name}" 已存在'}), 400
+
+        if env_id:
+            # 更新现有环境
+            for i, env in enumerate(test_environments):
+                if env['id'] == env_id:
+                    test_environments[i] = {
+                        'id': env_id,
+                        'name': name,
+                        'protocol': protocol,
+                        'domain': domain,
+                        'description': description,
+                        'status': env['status'],  # 保持原有状态
+                        'created_at': env['created_at'],  # 保持创建时间
+                        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    return jsonify({'success': True, 'message': f'环境 "{name}" 更新成功'})
+            return jsonify({'success': False, 'message': '未找到指定的测试环境'}), 404
+        else:
+            # 添加新环境
+            new_env = {
+                'id': str(uuid.uuid4())[:8],
+                'name': name,
+                'protocol': protocol,
+                'domain': domain,
+                'description': description,
+                'status': 'active',  # 默认为启用状态
+                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            test_environments.append(new_env)
+            return jsonify({'success': True, 'message': f'环境 "{name}" 创建成功'})
+
+    # GET请求，获取环境列表
+    return render_template('environment_config/test_environment.html',
+                           username=session['name'],
+                           environments=test_environments)
+
+
+# 切换测试环境状态（启用/禁用）
+@app.route('/environment_config/test_environment/toggle_status', methods=['POST'])
+@login_required
+@admin_required
+def toggle_environment_status():
+    env_id = request.json.get('id')
+    new_status = request.json.get('status')
+
+    if not env_id or not new_status:
+        return jsonify({'success': False, 'message': '环境ID和状态为必填项'}), 400
+
+    for i, env in enumerate(test_environments):
+        if env['id'] == env_id:
+            test_environments[i]['status'] = new_status
+            test_environments[i]['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            action = '启用' if new_status == 'active' else '禁用'
+            return jsonify({'success': True, 'message': f'环境 "{env["name"]}" 已{action}成功'})
+
+    return jsonify({'success': False, 'message': '未找到指定的测试环境'}), 404
+
+
+# DB配置管理
+@app.route('/environment_config/database', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def database_config_management():
+    global database_configs
+
+    if request.method == 'POST':
+        db_id = request.json.get('id')
+        name = request.json.get('name')
+        db_type = request.json.get('type')
+        description = request.json.get('description')
+
+        # 验证必填字段
+        if not name or not db_type:
+            return jsonify({'success': False, 'message': 'DB名称和类型为必填项'}), 400
+
+        # 检查名称唯一性
+        for db in database_configs:
+            if db['id'] != db_id and db['name'] == name:
+                return jsonify({'success': False, 'message': f'DB名称 "{name}" 已存在'}), 400
+
+        if db_id:
+            # 更新现有DB配置
+            for i, db in enumerate(database_configs):
+                if db['id'] == db_id:
+                    database_configs[i] = {
+                        'id': db_id,
+                        'name': name,
+                        'type': db_type,
+                        'description': description,
+                        'status': db['status'],  # 保持原有状态
+                        'created_at': db['created_at'],  # 保持创建时间
+                        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    return jsonify({'success': True, 'message': f'DB配置 "{name}" 更新成功'})
+            return jsonify({'success': False, 'message': '未找到指定的DB配置'}), 404
+        else:
+            # 添加新DB配置
+            new_db = {
+                'id': str(uuid.uuid4())[:8],
+                'name': name,
+                'type': db_type,
+                'description': description,
+                'status': 'active',  # 默认为启用状态
+                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            database_configs.append(new_db)
+            return jsonify({'success': True, 'message': f'DB配置 "{name}" 创建成功'})
+
+    # GET请求，获取DB配置列表
+    return render_template('environment_config/database_config.html',
+                           username=session['name'],
+                           db_configs=database_configs)
+
+
+# 切换DB配置状态（启用/禁用）
+@app.route('/environment_config/database/toggle_status', methods=['POST'])
+@login_required
+@admin_required
+def toggle_db_config_status():
+    db_id = request.json.get('id')
+    new_status = request.json.get('status')
+
+    if not db_id or not new_status:
+        return jsonify({'success': False, 'message': 'DB配置ID和状态为必填项'}), 400
+
+    for i, db in enumerate(database_configs):
+        if db['id'] == db_id:
+            database_configs[i]['status'] = new_status
+            database_configs[i]['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            action = '启用' if new_status == 'active' else '禁用'
+            return jsonify({'success': True, 'message': f'DB配置 "{db["name"]}" 已{action}成功'})
+
+    return jsonify({'success': False, 'message': '未找到指定的DB配置'}), 404
+
+
+# DB连接信息管理
+@app.route('/environment_config/database/<db_id>/connection', methods=['GET'])
+@login_required
+@admin_required
+def db_connection_info(db_id):
+    # 获取DB配置
+    db_config = next((db for db in database_configs if db['id'] == db_id), None)
+    if not db_config:
+        flash('未找到指定的DB配置', 'error')
+        return redirect(url_for('database_config_management'))
+
+    # 获取所有测试环境
+    environments = test_environments
+
+    # 获取DB连接信息
+    connections = [conn for conn in db_connections if conn['db_id'] == db_id]
+
+    return render_template('environment_config/db_connection_info.html',
+                           username=session['name'],
+                           db_config=db_config,
+                           environments=environments,
+                           db_connections=connections)
+
+
+# 更新DB连接信息
+@app.route('/environment_config/database/connection/update', methods=['POST'])
+@login_required
+@admin_required
+def update_db_connection():
+    db_id = request.json.get('db_id')
+    env_id = request.json.get('env_id')
+    host = request.json.get('host')
+    port = request.json.get('port')
+    user = request.json.get('user')
+    password = request.json.get('password')
+    db_name = request.json.get('db_name')
+
+    # 验证必填字段
+    if not db_id or not env_id or not host or not port or not db_name:
+        return jsonify({'success': False, 'message': 'DB ID、环境 ID、Host、Port 和 DB Name 为必填项'}), 400
+
+    # 检查DB配置和环境是否存在
+    db_config = next((db for db in database_configs if db['id'] == db_id), None)
+    environment = next((env for env in test_environments if env['id'] == env_id), None)
+
+    if not db_config:
+        return jsonify({'success': False, 'message': '未找到指定的DB配置'}), 404
+    if not environment:
+        return jsonify({'success': False, 'message': '未找到指定的环境'}), 404
+
+    # 查找现有连接
+    connection = next((conn for conn in db_connections if conn['db_id'] == db_id and conn['env_id'] == env_id), None)
+
+    connection_data = {
+        'db_id': db_id,
+        'env_id': env_id,
+        'host': host,
+        'port': port,
+        'user': user,
+        'db_name': db_name,
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+
+    # 如果提供了密码，则更新密码
+    if password is not None:
+        connection_data['password'] = password
+
+    if connection:
+        # 更新现有连接
+        for i, conn in enumerate(db_connections):
+            if conn['db_id'] == db_id and conn['env_id'] == env_id:
+                connection_data['id'] = conn['id']
+                connection_data['created_at'] = conn['created_at']
+                db_connections[i] = connection_data
+                return jsonify({'success': True, 'message': f'{environment["name"]} 的连接信息已更新'})
+    else:
+        # 添加新连接
+        connection_data['id'] = str(uuid.uuid4())[:8]
+        connection_data['created_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        db_connections.append(connection_data)
+        return jsonify({'success': True, 'message': f'{environment["name"]} 的连接信息已创建'})
+
 
 # 启动应用
 if __name__ == '__main__':

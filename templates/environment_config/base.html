@@ -1,42 +1,35 @@
-{% extends "dashboard.html" %}  <!-- 继承现有的基础模板 -->
+{% extends "dashboard.html" %}
 
-{% block title %}环境配置 - 自动化测试平台{% endblock %}
-
-{% block page_title %}环境配置管理{% endblock %}
-
-{% block breadcrumb %}环境配置{% endblock %}
+{% block title %}环境配置{% endblock %}
 
 {% block content %}
-    <!-- 子菜单导航 -->
-    <div class="submenu-nav">
-        <div class="submenu-items">
-            <a href="{{ url_for('database_config') }}" class="submenu-item {% if request.endpoint == 'database_config' %}active{% endif %}">数据库配置</a>
-            <a href="{{ url_for('test_environment_management') }}" class="submenu-item {% if request.endpoint == 'test_environment_management' %}active{% endif %}">测试环境管理</a>
+<div class="container-fluid">
+    <div class="row">
+        <!-- 环境配置导航 -->
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">环境配置导航</h4>
+                </div>
+                <div class="list-group list-group-flush">
+                    <a href="{{ url_for('test_environment_management') }}" class="list-group-item list-group-item-action {% if request.endpoint == 'test_environment_management' %}active{% endif %}">测试环境管理</a>
+                    <a href="{{ url_for('database_config_management') }}" class="list-group-item list-group-item-action {% if request.endpoint == 'database_config_management' %}active{% endif %}">DB配置管理</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主内容区域 -->
+        <div class="col-md-9">
+            {% block environment_content %}{% endblock %}
         </div>
     </div>
-
-    <!-- 子页面内容 -->
-    {% block env_content %}{% endblock %}
+</div>
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
+<!-- 环境配置相关脚本 -->
 <script>
-    // 页面加载时设置激活状态
-    document.addEventListener('DOMContentLoaded', function() {
-        // 高亮当前子菜单
-        document.querySelectorAll('.submenu-item').forEach(item => {
-            if (item.href === window.location.href) {
-                item.classList.add('active');
-            }
-        });
-
-        // 高亮侧边栏当前菜单
-        const currentPath = window.location.pathname;
-        document.querySelectorAll('.menu-link').forEach(link => {
-            if (link.href.includes(currentPath) && currentPath.includes('environment_config')) {
-                link.classList.add('active');
-            }
-        });
-    });
+    // 通用脚本可以放在这里
 </script>
 {% endblock %}
