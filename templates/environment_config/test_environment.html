@@ -1,0 +1,114 @@
+{% extends "environment_config/base.html" %}
+
+{% block env_content %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">测试环境管理</h2>
+        <button class="btn btn-primary" onclick="showModal('envModal')">
+            <i class="fas fa-plus"></i> 添加测试环境
+        </button>
+    </div>
+    <div class="card-body">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>环境名称</th>
+                    <th>HTTP协议</th>
+                    <th>服务域名</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if environments %}
+                    {% for env in environments %}
+                    <tr>
+                        <td>{{ env.name }}</td>
+                        <td>{{ env.protocol }}</td>
+                        <td>{{ env.domain }}</td>
+                        <td>
+                            <span class="status-badge {{ 'status-active' if env.status == 'active' else 'status-inactive' }}">
+                                {{ '启用' if env.status == 'active' else '禁用' }}
+                            </span>
+                        </td>
+                        <td>
+                            <button class="btn btn-outline btn-sm" onclick="toggleEnvironmentStatus('{{ env.id }}', '{{ env.status }}')">
+                                <i class="fas {{ 'fa-toggle-on' if env.status == 'active' else 'fa-toggle-off' }}"></i>
+                                {{ '禁用' if env.status == 'active' else '启用' }}
+                            </button>
+                            <button class="btn btn-outline btn-sm" onclick="editEnvironment('{{ env.id }}')">
+                                <i class="fas fa-edit"></i> 编辑
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteEnvironment('{{ env.id }}')">
+                                <i class="fas fa-trash"></i> 删除
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="empty-state">
+                            <i class="fas fa-server"></i>
+                            <p>暂无测试环境，请添加新环境</p>
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 添加/编辑测试环境模态框 -->
+<div class="modal-backdrop" id="envModal" style="display:none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 class="modal-title" id="envModalTitle">添加测试环境</h3>
+            <button class="modal-close" onclick="hideModal('envModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="environmentForm" method="POST" action="{{ url_for('test_environment_management') }}">
+                <input type="hidden" id="env_id" name="id">
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="env_name">环境名称 *</label>
+                        <input type="text" class="form-control" id="env_name" name="name" required
+                               placeholder="例如：开发环境、测试环境">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="env_protocol">HTTP协议 *</label>
+                        <select class="form-select" id="env_protocol" name="protocol" required>
+                            <option value="http">HTTP</option>
+                            <option value="https">HTTPS</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="env_domain">服务域名 *</label>
+                        <input type="text" class="form-control" id="env_domain" name="domain" required
+                               placeholder="例如：api.example.com">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="env_description">环境描述</label>
+                    <textarea class="form-control" id="env_description" name="description" rows="3"
+                              placeholder="描述该环境的用途、特点等信息"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-check-label">
+                        <input type="checkbox" id="env_status" name="status" checked> 启用该环境
+                    </label>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="hideModal('envModal')">取消</button>
+                    <button type="submit" class="btn btn-primary">保存环境</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

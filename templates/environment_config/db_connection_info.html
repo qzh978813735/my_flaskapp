@@ -1,0 +1,145 @@
+{% extends "environment_config/base.html" %}
+
+{% block env_content %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <i class="fas fa-plug"></i> {{ db_config.name }} 连接配置
+            <small class="text-muted">{{ db_config.type }}</small>
+        </h2>
+        <a href="{{ url_for('database_config_management') }}" class="btn btn-outline">
+            <i class="fas fa-arrow-left"></i> 返回
+        </a>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            为每个测试环境配置数据库连接信息
+        </div>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>测试环境</th>
+                    <th>主机地址</th>
+                    <th>端口</th>
+                    <th>用户名</th>
+                    <th>数据库名</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for env in environments %}
+                {% set conn = db_connections | selectattr('env_id', 'equalto', env.id) | first %}
+                <tr>
+                    <td>
+                        <strong>{{ env.name }}</strong>
+                        <div class="text-muted small">{{ env.protocol }}://{{ env.domain }}</div>
+                    </td>
+                    <td>{{ conn.host if conn else '-' }}</td>
+                    <td>{{ conn.port if conn else '-' }}</td>
+                    <td>{{ conn.user if conn else '-' }}</td>
+                    <td>{{ conn.db_name if conn else '-' }}</td>
+                    <td>
+                        <button class="btn btn-outline btn-sm" onclick="editConnection('{{ env.id }}')">
+                            <i class="fas fa-edit"></i> {{ '编辑' if conn else '配置' }}
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 编辑连接信息模态框 -->
+<div class="modal-backdrop" id="connModal" style="display:none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 class="modal-title" id="connModalTitle">配置数据库连接</h3>
+            <button class="modal-close" onclick="hideModal('connModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="connectionForm" method="POST" action="{{ url_for('update_db_connection') }}">
+                <input type="hidden" id="db_id" name="db_id" value="{{ db_config.id }}">
+                <input type="hidden" id="env_id" name="env_id">
+
+                <div class="form-group">
+                    <label class="form-label">环境</label>
+                    <div id="env_name" class="form-control-static"></div>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="conn_host">主机地址 *</label>
+                        <input type="text" class="form-control" id="conn_host" name="host" required
+                               placeholder="IP地址或域名">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="conn_port">端口 *</label>
+                        <input type="number" class="form-control" id="conn_port" name="port" required
+                               placeholder="例如：3306, 5432">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="conn_user">用户名</label>
+                        <input type="text" class="form-control" id="conn_user" name="user"
+                               placeholder="数据库用户名">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="conn_password">密码</label>
+                        <input type="password" class="form-control" id="conn_password" name="password"
+                               placeholder="数据库密码">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="conn_dbname">数据库名 *</label>
+                        <input type="text" class="form-control" id="conn_dbname" name="db_name" required
+                               placeholder="数据库名称">
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="hideModal('connModal')">取消</button>
+                    <button type="submit" class="btn btn-primary">保存配置</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 编辑连接信息
+    function editConnection(envId) {
+        // 获取环境信息
+        const env = {{ environments|tojson }}.find(e => e.id === envId);
+        if (!env) return;
+
+        // 获取连接信息
+        const conn = {{ db_connections|tojson }}.find(c => c.env_id === envId);
+
+        // 填充表单
+        document.getElementById('connModalTitle').textContent = `配置 ${env.name} 连接`;
+        document.getElementById('env_id').value = envId;
+        document.getElementById('env_name').textContent = `${env.name} (${env.protocol}://${env.domain})`;
+
+        if (conn) {
+            document.getElementById('conn_host').value = conn.host || '';
+            document.getElementById('conn_port').value = conn.port || '';
+            document.getElementById('conn_user').value = conn.user || '';
+            document.getElementById('conn_dbname').value = conn.db_name || '';
+        } else {
+            // 重置表单
+            document.getElementById('conn_host').value = '';
+            document.getElementById('conn_port').value = '';
+            document.getElementById('conn_user').value = '';
+            document.getElementById('conn_password').value = '';
+            document.getElementById('conn_dbname').value = '';
+        }
+
+        showModal('connModal');
+    }
+</script>
+{% endblock %}

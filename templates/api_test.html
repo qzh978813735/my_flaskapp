@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>接口测试 - 自动化测试平台</title>
+    <!-- 引入外部资源 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        /* 基础样式与其他页面统一 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #f0f2f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
+        .sidebar {
+            width: 250px;
+            background-color: #202124;
+            color: white;
+            padding: 20px 0;
+        }
+        .sidebar-header {
+            padding: 0 20px 20px;
+            border-bottom: 1px solid #3c4043;
+            margin-bottom: 20px;
+        }
+        .sidebar-logo {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a73e8;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sidebar-menu {
+            list-style: none;
+        }
+        .menu-item {
+            margin-bottom: 5px;
+        }
+        .menu-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 20px;
+            color: #dadce0;
+            text-decoration: none;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+        .menu-link:hover, .menu-link.active {
+            background-color: #3c4043;
+            color: white;
+            border-left-color: #1a73e8;
+        }
+        .menu-icon {
+            font-size: 18px;
+            width: 20px;
+            text-align: center;
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .top-nav {
+            background-color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+        .nav-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #202124;
+        }
+        .breadcrumbs {
+            font-size: 14px;
+            color: #5f6368;
+        }
+        .breadcrumbs a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background-color: #1a73e8;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+        .logout-btn {
+            color: #d93025;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 10px;
+        }
+        .page-content {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+        .dashboard-card {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.05);
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #202124;
+        }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-primary {
+            background-color: #1a73e8;
+            color: white;
+        }
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #1a73e8;
+            color: #1a73e8;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #202124;
+        }
+        .form-control {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .form-control:focus {
+            outline: none;
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+        }
+        textarea.form-control {
+            min-height: 150px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        .table-responsive {
+            overflow-x: auto;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .data-table th, .data-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .data-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        .data-table tr:hover {
+            background-color: #f8f9fa;
+        }
+        .method-badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .method-get {
+            background-color: #e6f4ea;
+            color: #137333;
+        }
+        .method-post {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+        }
+        .method-put {
+            background-color: #fff8e6;
+            color: #e37400;
+        }
+        .method-delete {
+            background-color: #fce8e6;
+            color: #d93025;
+        }
+        .actions-cell {
+            display: flex;
+            gap: 8px;
+        }
+        .action-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            transition: color 0.2s;
+            padding: 4px;
+        }
+        .edit-btn {
+            color: #1a73e8;
+        }
+        .delete-btn {
+            color: #d93025;
+        }
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+        .message {
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .success {
+            background-color: #e6f4ea;
+            color: #137333;
+        }
+        .error {
+            background-color: #fce8e6;
+            color: #d93025;
+        }
+        .error-message {
+            color: #d93025;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+
+        {% include 'includes/sidebar.html' %}
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 顶部导航 -->
+            <nav class="top-nav">
+                <h1 class="nav-title"></h1>
+                <div class="user-info">
+                    <div class="user-avatar">{{ username[0].upper() }}</div>
+                    <span>{{ username }}</span>
+                    <button class="logout-btn" onclick="window.location.href='{{ url_for('logout') }}';">
+                        <i class="fas fa-sign-out-alt"></i> 退出登录
+                    </button>
+                </div>
+            </nav>
+
+            <!-- 页面内容 -->
+            <div class="container-fluid">
+                <div class="page-header">
+                    <h1>接口测试管理</h1>
+                    <p class="text-muted">管理接口测试项目、用例组和测试用例</p>
+                </div>
+
+                <!-- 项目管理卡片 -->
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h2 class="card-title h5 mb-0">项目管理</h2>
+                        <button class="btn btn-primary" data-toggle="modal" data-target="#createProjectModal">
+                            <i class="fas fa-plus"></i> 创建项目
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <!-- 搜索框 -->
+                        <div class="search-container">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="projectSearch" class="form-control" placeholder="搜索项目...">
+                        </div>
+
+                        <!-- 项目列表 -->
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>项目名称</th>
+                                        <th>版本</th>
+                                        <th>状态</th>
+                                        <th>创建时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="projectTableBody">
+                                    {% for project in projects %}
+                                    <tr data-project-id="{{ project.id }}">
+                                        <td>{{ project.name }}</td>
+                                        <td>{{ project.version }}</td>
+                                        <td>
+                                            <span class="badge {% if project.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}">
+                                                {{ '启用' if project.status == 'active' else '禁用' }}
+                                            </span>
+                                        </td>
+                                        <td>{{ project.created_at }}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-info view-project" data-id="{{ project.id }}">
+                                                <i class="fas fa-eye"></i> 查看
+                                            </button>
+                                            <button class="btn btn-sm btn-primary edit-project" data-id="{{ project.id }}">
+                                                <i class="fas fa-edit"></i> 编辑
+                                            </button>
+                                            <button class="btn btn-sm {% if project.status == 'active' %}btn-warning{% else %}btn-success{% endif %} toggle-status" data-id="{{ project.id }}" data-status="{{ project.status }}">
+                                                <i class="fas fa-power-off"></i> {{ '禁用' if project.status == 'active' else '启用' }}
+                                            </button>
+                                            <button class="btn btn-sm btn-danger delete-project" data-id="{{ project.id }}">
+                                                <i class="fas fa-trash-alt"></i> 删除
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 无数据提示 -->
+                        {% if not projects %}
+                        <div class="text-center py-4 text-muted">
+                            <i class="fas fa-folder-open fa-3x mb-2"></i>
+                            <p>暂无项目数据，请点击"创建项目"按钮添加</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建项目模态框 -->
+    <div class="modal fade" id="createProjectModal" tabindex="-1" role="dialog" aria-labelledby="createProjectModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createProjectModalLabel">创建新项目</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <form id="createProjectForm" action="{{ url_for('create_project') }}" method="post">
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="projectName">项目名称 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="projectName" name="name" required placeholder="请输入项目名称">
+                        </div>
+                        <div class="form-group">
+                            <label for="projectVersion">项目版本</label>
+                            <input type="text" class="form-control" id="projectVersion" name="version" value="1.0" placeholder="请输入项目版本">
+                        </div>
+                        <div class="form-group">
+                            <label for="projectDescription">项目描述</label>
+                            <textarea class="form-control" id="projectDescription" name="description" rows="3" placeholder="请输入项目描述"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary">创建</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑项目模态框 -->
+    <div class="modal fade" id="editProjectModal" tabindex="-1" role="dialog" aria-labelledby="editProjectModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editProjectModalLabel">编辑项目</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <form id="editProjectForm" method="post" action="">
+
+                    <input type="hidden" id="editProjectId" name="project_id">
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="editProjectName">项目名称 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="editProjectName" name="name" required placeholder="请输入项目名称">
+                        </div>
+                        <div class="form-group">
+                            <label for="editProjectVersion">项目版本</label>
+                            <input type="text" class="form-control" id="editProjectVersion" name="version" placeholder="请输入项目版本">
+                        </div>
+                        <div class="form-group">
+                            <label for="editProjectDescription">项目描述</label>
+                            <textarea class="form-control" id="editProjectDescription" name="description" rows="3" placeholder="请输入项目描述"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 删除确认模态框 -->
+    <div class="modal fade" id="deleteConfirmModal" tabindex="-1" role="dialog" aria-labelledby="deleteConfirmModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteConfirmModalLabel">确认删除</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>确定要删除此项目吗？此操作不可撤销。</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteBtn">删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 引入JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // 项目搜索功能
+            $('#projectSearch').on('input', function() {
+                const searchTerm = $(this).val().toLowerCase();
+                $('#projectTableBody tr').each(function() {
+                    const projectName = $(this).find('td:first').text().toLowerCase();
+                    $(this).toggle(projectName.includes(searchTerm));
+                });
+            });
+
+            // 查看项目详情
+            $('.view-project').on('click', function() {
+                const projectId = $(this).data('id');
+                window.location.href = '{{ url_for('get_project', project_id='') }}' + projectId;
+
+            });
+
+            // 编辑项目
+            let currentProjectId = null;
+            $('.edit-project').on('click', function() {
+                currentProjectId = $(this).data('id');
+                // 在实际项目中，这里应该通过AJAX获取项目数据
+                // 为了演示，我们从DOM中提取数据
+                const projectRow = $(`tr[data-project-id="${currentProjectId}"]`);
+                const projectName = projectRow.find('td:eq(0)').text();
+                const projectVersion = projectRow.find('td:eq(1)').text();
+                // 假设描述存储在data属性中
+                const projectDescription = projectRow.data('description') || '';
+
+                // 填充表单
+                $('#editProjectId').val(currentProjectId);
+                $('#editProjectName').val(projectName);
+                $('#editProjectVersion').val(projectVersion);
+                $('#editProjectDescription').val(projectDescription);
+
+                // 显示模态框
+                $('#editProjectModal').modal('show');
+            });
+
+            // 切换项目状态
+            $('.toggle-status').on('click', function() {
+                const projectId = $(this).data('id');
+                const currentStatus = $(this).data('status');
+                const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+                const newStatusText = newStatus === 'active' ? '禁用' : '启用';
+                const newButtonClass = newStatus === 'active' ? 'btn-warning' : 'btn-success';
+                const oldButtonClass = newStatus === 'active' ? 'btn-success' : 'btn-warning';
+                const newBadgeClass = newStatus === 'active' ? 'badge-success' : 'badge-secondary';
+                const oldBadgeClass = newStatus === 'active' ? 'badge-secondary' : 'badge-success';
+                const newStatusDisplay = newStatus === 'active' ? '启用' : '禁用';
+
+                // 确认操作
+                if (confirm(`确定要${newStatusText}此项目吗？`)) {
+                    // 在实际项目中，这里应该发送AJAX请求
+                    // 为了演示，我们直接更新DOM
+                    const projectRow = $(`tr[data-project-id="${projectId}"]`);
+                    const statusBadge = projectRow.find('td:eq(2) span');
+                    const statusButton = projectRow.find('.toggle-status');
+
+                    // 更新状态徽章
+                    statusBadge.removeClass(oldBadgeClass).addClass(newBadgeClass).text(newStatusDisplay);
+
+                    // 更新按钮
+                    statusButton.removeClass(oldButtonClass).addClass(newButtonClass)
+                               .data('status', newStatus)
+                               .find('i').next().text(newStatusText);
+
+                    // 模拟AJAX请求成功
+                    alert('项目状态已更新');
+                }
+            });
+
+            // 删除项目
+            let deleteProjectId = null;
+            $('.delete-project').on('click', function() {
+                deleteProjectId = $(this).data('id');
+                $('#deleteConfirmModal').modal('show');
+            });
+
+            // 确认删除
+            $('#confirmDeleteBtn').on('click', function() {
+                if (deleteProjectId) {
+                    // 在实际项目中，这里应该发送AJAX请求
+                    // 为了演示，我们直接从DOM中删除行
+                    $(`tr[data-project-id="${deleteProjectId}"]`).remove();
+                    $('#deleteConfirmModal').modal('hide');
+
+                    // 检查是否还有项目
+                    if ($('#projectTableBody tr').length === 0) {
+                        $('.table-responsive').hide();
+                        $('.text-center.py-4').show();
+                    }
+
+                    // 模拟AJAX请求成功
+                    alert('项目已删除');
+                    deleteProjectId = null;
+                }
+            });
+
+            // 表单提交处理
+            $('#editProjectForm').on('submit', function(e) {
+                e.preventDefault();
+                const projectId = $('#editProjectId').val();
+                const url = `/api_test/projects/${projectId}`;
+                const method = 'PUT'; // 注意方法改为PUT
+
+                // 模拟表单提交
+                $.ajax({
+                    url: url,
+                    type: method,
+                    data: $(this).serialize(),
+                    success: function(response) {
+                        form.closest('.modal').modal('hide');
+                        location.reload();
+                    },
+                    error: function(xhr, status, error) {
+                        alert('操作失败: ' + error);
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
