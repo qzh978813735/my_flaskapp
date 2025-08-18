@@ -1,12 +1,11 @@
-<!-- 完整的侧边栏代码，包含所有正确链接 -->
 <aside class="sidebar">
     <div class="sidebar-header">
-        <h1 class="sidebar-title">系统管理平台</h1>
+        <h1 class="sidebar-title">自动化测试管理平台</h1>
     </div>
     <ul class="sidebar-menu">
         <!-- 仪表盘 -->
         <li class="menu-item">
-            <a href="{{ url_for('dashboard') }}" class="menu-link {% if request.path == '/dashboard' %}active{% endif %}">
+            <a href="{{ url_for('dashboard') }}" class="menu-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
                 <i class="fas fa-tachometer-alt menu-icon"></i>
                 <span class="menu-text">仪表盘</span>
             </a>
@@ -14,7 +13,7 @@
 
         <!-- 用户管理 -->
         <li class="menu-item">
-            <a href="{{ url_for('user_management') }}" class="menu-link {% if request.path.startswith('/user_management') %}active{% endif %}">
+            <a href="{{ url_for('user_management') }}" class="menu-link {% if request.endpoint == 'user_management' %}active{% endif %}">
                 <i class="fas fa-users menu-icon"></i>
                 <span class="menu-text">用户管理</span>
             </a>
@@ -22,7 +21,7 @@
 
         <!-- 邮件配置 -->
         <li class="menu-item">
-            <a href="{{ url_for('email_config') }}" class="menu-link {% if request.path.startswith('/email_config') %}active{% endif %}">
+            <a href="{{ url_for('email_config') }}" class="menu-link {% if request.endpoint == 'email_config' %}active{% endif %}">
                 <i class="fas fa-envelope menu-icon"></i>
                 <span class="menu-text">邮件配置</span>
             </a>
@@ -30,7 +29,7 @@
 
         <!-- 环境配置 -->
         <li class="menu-item">
-            <a href="{{ url_for('environment_config_home') }}" class="menu-link {% if request.path.startswith('/environment_config') %}active{% endif %}" onclick="handleEnvironmentConfigClick(event)">
+            <a href="{{ url_for('environment_config_home') }}" class="menu-link {% if 'environment_config' in request.endpoint %}active{% endif %}">
                 <i class="fas fa-cogs menu-icon"></i>
                 <span class="menu-text">环境配置</span>
             </a>
@@ -38,38 +37,26 @@
 
         <!-- MOCK数据 -->
         <li class="menu-item">
-            <a href="{{ url_for('mock_data') }}" class="menu-link {% if request.path.startswith('/mock_data') %}active{% endif %}">
+            <a href="{{ url_for('mock_data') }}" class="menu-link {% if request.endpoint == 'mock_data' %}active{% endif %}">
                 <i class="fas fa-database menu-icon"></i>
                 <span class="menu-text">MOCK数据</span>
             </a>
         </li>
 
-        <!-- 接口测试 (假设路由函数为api_test) -->
+        <!-- 接口测试 -->
         <li class="menu-item">
             <a href="{{ url_for('api_test') }}" class="menu-link {% if request.endpoint == 'api_test' %}active{% endif %}">
                 <i class="fas fa-plug menu-icon"></i>
                 <span class="menu-text">接口测试</span>
             </a>
         </li>
-        <!-- 修改为 -->
+
+        <!-- 执行计划 -->
         <li class="menu-item">
-            <a href="{{ url_for('execution_plan') }}" class="menu-link {% if request.path.startswith('/execution_plan') %}active{% endif %}">
-                <i class="fas fa-calendar-alt menu-icon"></i>  <!-- 统一为日历图标 -->
+            <a href="{{ url_for('execution_plan') }}" class="menu-link {% if 'execution_plan' in request.endpoint %}active{% endif %}">
+                <i class="fas fa-calendar-alt menu-icon"></i>
                 <span class="menu-text">执行计划</span>
             </a>
         </li>
     </ul>
 </aside>
-
-<script>
-function handleEnvironmentConfigClick(event) {
-    // 确保链接正常工作
-    const href = event.currentTarget.getAttribute('href');
-    if (href && href !== '#' && href !== 'javascript:void(0)') {
-        // 如果是正常链接，则允许默认行为
-        return true;
-    }
-    // 如果链接无效，则阻止默认行为
-    event.preventDefault();
-}
-</script>

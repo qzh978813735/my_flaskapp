@@ -12,8 +12,14 @@
 }
 
 .sidebar-header {
-
     padding: 0 20px 20px;
+}
+
+.sidebar-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+    color: white;
     border-bottom: 1px solid #3c4043;
     margin-bottom: 20px;
 }

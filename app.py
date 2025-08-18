@@ -1288,6 +1288,7 @@ def get_test_reports(project_id):
 @admin_required
 def environment_config_home():
     # 默认重定向到测试环境管理页面
+    print("Redirecting to test_environment_management")  # 添加调试信息
     return redirect(url_for('test_environment_management'))
 
 
@@ -1297,6 +1298,7 @@ def environment_config_home():
 @admin_required
 def test_environment_management():
     global test_environments
+    print("Accessing test_environment_management route")  # 添加调试信息
 
     if request.method == 'POST':
         env_id = request.json.get('id')
@@ -1346,6 +1348,7 @@ def test_environment_management():
             return jsonify({'success': True, 'message': f'环境 "{name}" 创建成功'})
 
     # GET请求，获取环境列表
+    print("Rendering test_environment.html")  # 添加调试信息
     return render_template('environment_config/test_environment.html',
                            username=session['name'],
                            environments=test_environments)
