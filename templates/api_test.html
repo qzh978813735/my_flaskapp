@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 添加CSRF元标签 -->
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>接口测试 - 自动化测试平台</title>
     <!-- 引入外部资源 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -260,7 +262,7 @@
                 <div class="user-info">
                     <div class="user-avatar">{{ username[0].upper() }}</div>
                     <span>{{ username }}</span>
-                    <button class="logout-btn" onclick="window.location.href='{{ url_for('logout') }}';">
+                    <button class="logout-btn" onclick="window.location.href = '{{ url_for('logout') }}';">
                         <i class="fas fa-sign-out-alt"></i> 退出登录
                     </button>
                 </div>
@@ -355,16 +357,13 @@
                     </button>
                 </div>
                 <form id="createProjectForm" action="{{ url_for('create_project') }}" method="post">
-                        {{ csrf_token() }}
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="modal-body">
                         <div class="form-group">
                             <label for="projectName">项目名称 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" id="projectName" name="name" required placeholder="请输入项目名称">
                         </div>
-                        <div class="form-group">
-                            <label for="projectVersion">项目版本</label>
-                            <input type="text" class="form-control" id="projectVersion" name="version" value="1.0" placeholder="请输入项目版本">
-                        </div>
+                        <!-- 版本字段已移除，数据库表中无此列 -->
                         <div class="form-group">
                             <label for="projectDescription">项目描述</label>
                             <textarea class="form-control" id="projectDescription" name="description" rows="3" placeholder="请输入项目描述"></textarea>
@@ -390,7 +389,7 @@
                     </button>
                 </div>
                 <form id="editProjectForm" method="post" action="">
-                        {{ csrf_token() }}
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" id="editProjectId" name="project_id">
                     <div class="modal-body">
                         <div class="form-group">
@@ -454,7 +453,7 @@
             // 查看项目详情
             $('.view-project').on('click', function() {
                 const projectId = $(this).data('id');
-                window.location.href = '{{ url_for('get_project', project_id='') }}' + projectId;
+                window.location.href = "{{ url_for('get_project', project_id='') }}" + projectId;
 
             });
 
@@ -547,14 +546,33 @@
                 const url = `/api_test/projects/${projectId}`;
                 const method = 'PUT'; // 注意方法改为PUT
 
-                // 模拟表单提交
+                // 获取CSRF令牌
+                const csrfToken = $('meta[name="csrf-token"]').attr('content');
+                
+                // 构造JSON数据
+                const formData = {
+                    name: $('#editProjectName').val(),
+                    version: $('#editProjectVersion').val(),
+                    description: $('#editProjectDescription').val()
+                };
+                
+                // 发送AJAX请求
                 $.ajax({
                     url: url,
                     type: method,
-                    data: $(this).serialize(),
+                    contentType: 'application/json',
+                    data: JSON.stringify(formData),
+                    headers: {
+                        'X-CSRFToken': csrfToken  // 添加CSRF请求头
+                    },
                     success: function(response) {
-                        form.closest('.modal').modal('hide');
-                        location.reload();
+                        if (response.success) {
+                            alert('项目更新成功');
+                            $('#editProjectModal').modal('hide');
+                            location.reload();
+                        } else {
+                            alert('操作失败: ' + response.message);
+                        }
                     },
                     error: function(xhr, status, error) {
                         alert('操作失败: ' + error);

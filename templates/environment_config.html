@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+{% block title %}环境配置{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">环境配置管理</h3>
+                </div>
+                <div class="card-body">
+                    <p>欢迎来到环境配置管理页面。</p>
+                    <p>这里可以管理系统中的各种环境配置，包括数据库连接、服务地址等。</p>
+                    
+                    <div class="mt-4">
+                        <h4>环境列表</h4>
+                        <div class="table-responsive">
+                            <table class="table table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>环境名称</th>
+                                        <th>环境描述</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- 模拟数据 -->
+                                    <tr>
+                                        <td>开发环境</td>
+                                        <td>用于开发和测试</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-primary" disabled>编辑</button>
+                                            <button class="btn btn-sm btn-danger" disabled>删除</button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>测试环境</td>
+                                        <td>用于系统测试</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-primary" disabled>编辑</button>
+                                            <button class="btn btn-sm btn-danger" disabled>删除</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-primary" disabled>添加新环境</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -16,9 +16,17 @@ from functools import wraps
 from db_utils import db
 # 导入初始化所有表的函数
 from init_all_tables import init_all_tables
+import os
 
-# 在应用启动时初始化所有表
-init_all_tables()
+# 从环境变量获取是否初始化数据库的配置，默认为False
+INIT_DB_ON_START = os.environ.get('INIT_DB_ON_START', 'False').lower() == 'true'
+
+# 只有当配置为True时才初始化数据库
+if INIT_DB_ON_START:
+    print("正在初始化数据库表结构...")
+    init_all_tables()
+else:
+    print("跳过数据库初始化")
 
 # 初始化Flask应用
 app = Flask(__name__)
@@ -193,6 +201,7 @@ def login():
                 session['username'] = user['username']
                 session['name'] = user['name']
                 session['role'] = user['role_name']
+                session['id'] = user['id']  # 保存用户ID到session
                 flash(f'欢迎回来，{user["name"]}', 'success')
                 return redirect(url_for('dashboard'))
             else:
@@ -1250,7 +1259,7 @@ def api_test_projects():
         print(f'获取项目列表数据库错误: {e}')
         filtered_projects = []
 
-    return render_template('api_test/projects.html',
+    return render_template('api_test.html',
                            username=session['name'],
                            projects=filtered_projects,
                            user_role=session.get('role'))
@@ -1266,14 +1275,17 @@ def create_project():
 
     project_id = str(uuid.uuid4())[:8]
     name = request.form.get('name')
-    version = request.form.get('version', '1.0')
     description = request.form.get('description', '')
-    status = 'active'
+    is_active = True
     created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     updated_at = created_at
-    manager_id = session.get('username')
+    owner_id = session.get('id')
 
     # 验证必填字段
+    if not owner_id:
+        flash('请先登录', 'error')
+        return redirect(url_for('login'))
+    
     if not name:
         flash('项目名称不能为空', 'error')
         return redirect(url_for('api_test_projects'))
@@ -1283,12 +1295,11 @@ def create_project():
         db.insert('API_TEST_PROJECT', {
             'id': project_id,
             'name': name,
-            'version': version,
             'description': description,
-            'status': status,
+            'is_active': is_active,
             'created_at': created_at,
             'updated_at': updated_at,
-            'manager_id': manager_id
+            'owner_id': owner_id
         })
         flash(f'项目 "{name}" 创建成功', 'success')
     except Exception as e:
