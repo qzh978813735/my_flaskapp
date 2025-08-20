@@ -416,7 +416,7 @@
                     </div>
                     <div class="card-body">
                         <form method="post">
-                                {{ csrf_token() }}
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <div class="form-grid">
                                 <div class="form-group">
                                     <label class="form-label" for="name">收件人名称</label>

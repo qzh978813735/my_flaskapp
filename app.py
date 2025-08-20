@@ -674,7 +674,7 @@ def email_recipients_config():
                 'id': recipient_id,
                 'email': email,
                 'name': name,
-                'type': recipient_type,
+                'recipient_type': recipient_type,
                 'is_active': is_active,
                 'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -982,7 +982,7 @@ def plan_execution():
             last_execution = db.fetch_one('''
                 SELECT * FROM EXECUTION_LOG 
                 WHERE plan_id = %s 
-                ORDER BY execution_time DESC 
+                ORDER BY start_time DESC 
                 LIMIT 1
             ''', (plan['id'],))
 
@@ -1173,7 +1173,7 @@ def plan_config():
 def execution_logs_page():
     try:
         # 从数据库获取日志列表
-        sorted_logs = db.fetch_all('SELECT * FROM EXECUTION_LOG ORDER BY execution_time DESC')
+        sorted_logs = db.fetch_all('SELECT * FROM EXECUTION_LOG ORDER BY start_time DESC')
     except Exception as e:
         flash(f'获取执行日志失败: {str(e)}', 'error')
         print(f'获取执行日志数据库错误: {e}')
@@ -1276,6 +1276,7 @@ def create_project():
     project_id = str(uuid.uuid4())[:8]
     name = request.form.get('name')
     description = request.form.get('description', '')
+    version = request.form.get('version', '1.0.0')
     is_active = True
     created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     updated_at = created_at
@@ -1296,6 +1297,7 @@ def create_project():
             'id': project_id,
             'name': name,
             'description': description,
+            'version': version,
             'is_active': is_active,
             'created_at': created_at,
             'updated_at': updated_at,
