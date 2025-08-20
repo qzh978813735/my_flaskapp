@@ -8,11 +8,11 @@ load_dotenv()
 
 # 数据库连接配置
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
+    'host': os.getenv('DB_HOST', '117.72.177.199'),
     'port': int(os.getenv('DB_PORT', '3306')),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', 'password'),
-    'database': os.getenv('DB_NAME', 'api_test_platform'),
+    'user': os.getenv('DB_USER', '132'),
+    'password': os.getenv('DB_PASSWORD', '123456'),
+    'database': os.getenv('DB_NAME', '132'),
     'charset': 'utf8mb4',
     'cursorclass': 'DictCursor'
 }

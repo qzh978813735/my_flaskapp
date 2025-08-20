@@ -1,6 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_wtf.csrf import CSRFProtect
-import uuid
 from datetime import datetime, timedelta
 from functools import wraps
 import json
@@ -10,15 +9,16 @@ import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask_login import login_required, current_user
-from datetime import datetime, timedelta
 import uuid
-import json
-import threading
-import time
 from functools import wraps
 
 # 导入数据库工具
 from db_utils import db
+# 导入初始化所有表的函数
+from init_all_tables import init_all_tables
+
+# 在应用启动时初始化所有表
+init_all_tables()
 
 # 初始化Flask应用
 app = Flask(__name__)
@@ -170,6 +170,10 @@ def admin_required(f):
 # 登录路由
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # 在GET请求时清除所有flash消息
+    if request.method == 'GET':
+        # 清除所有flash消息
+        session.pop('_flashes', None)
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
@@ -178,15 +182,24 @@ def login():
             flash('用户名和密码不能为空', 'error')
             return render_template('login.html')
 
-        user = users.get(username)
-        if user and user['password'] == password and user['status'] == 'active':
-            session['username'] = username
-            session['name'] = user['name']
-            session['role'] = user['role']
-            flash(f'欢迎回来，{user["name"]}', 'success')
-            return redirect(url_for('dashboard'))
-        else:
-            flash('用户名或密码错误，或账号已被禁用', 'error')
+        try:
+            # 从数据库查询用户
+            query = "SELECT u.id, u.username, u.password_hash, u.name, u.is_active, r.name as role_name "
+            query += "FROM USER u JOIN USER_ROLE ur ON u.id = ur.user_id JOIN ROLE r ON ur.role_id = r.id "
+            query += "WHERE u.username = %s"
+            user = db.fetch_one(query, (username,))
+
+            if user and user['password_hash'] == password and user['is_active'] == 1:
+                session['username'] = user['username']
+                session['name'] = user['name']
+                session['role'] = user['role_name']
+                flash(f'欢迎回来，{user["name"]}', 'success')
+                return redirect(url_for('dashboard'))
+            else:
+                flash('用户名或密码错误，或账号已被禁用', 'error')
+        except Exception as e:
+            flash(f'登录失败: {str(e)}', 'error')
+            print(f'登录数据库错误: {e}')
 
     return render_template('login.html')
 
@@ -208,30 +221,43 @@ def forgot_password():
             flash('邮箱不能为空', 'error')
             return render_template('forgot_password.html')
 
-        # 查找匹配的用户
-        user_found = None
-        for username, user_info in users.items():
-            if user_info.get('email') == email:
-                user_found = username
-                break
-
-        if not user_found:
-            flash('未找到该邮箱对应的用户', 'error')
-            return render_template('forgot_password.html')
-
-        # 生成重置令牌
-        token = str(uuid.uuid4())
-        expiry = datetime.now() + timedelta(hours=1)  # 1小时后过期
-        password_reset_tokens[token] = {
-            'username': user_found,
-            'expiry': expiry
-        }
-
-        # 构建重置链接
-        reset_url = url_for('reset_password', token=token, _external=True)
-
-        # 发送邮件
         try:
+            # 从数据库查询用户
+            query = "SELECT id, username, name FROM USER WHERE email = %s AND status = 'active'"
+            user = db.fetch_one(query, (email,))
+
+            if not user:
+                flash('未找到该邮箱对应的用户', 'error')
+                return render_template('forgot_password.html')
+
+            # 生成重置令牌
+            token = str(uuid.uuid4())
+            expiry = datetime.now() + timedelta(hours=1)  # 1小时后过期
+
+            # 保存重置令牌到数据库
+            # 先检查是否存在PASSWORD_RESET表，如果不存在则创建
+            try:
+                db.execute_query("SELECT 1 FROM PASSWORD_RESET LIMIT 1")
+            except:
+                db.execute_query("""CREATE TABLE IF NOT EXISTS PASSWORD_RESET (
+    token VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    expiry DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES USER(id) ON DELETE CASCADE
+)""")
+
+            # 插入令牌
+            db.insert('PASSWORD_RESET', {
+                'token': token,
+                'user_id': user['id'],
+                'expiry': expiry.strftime('%Y-%m-%d %H:%M:%S')
+            })
+
+            # 构建重置链接
+            reset_url = url_for('reset_password', token=token, _external=True)
+
+            # 发送邮件
             # 检查邮件配置
             if not all([email_config['smtp_server'], email_config['sender_email'], email_config['sender_password']]):
                 flash('邮件服务器未配置，无法发送重置链接', 'error')
@@ -266,7 +292,8 @@ def forgot_password():
             return redirect(url_for('login'))
 
         except Exception as e:
-            flash(f'发送邮件失败: {str(e)}', 'error')
+            flash(f'处理请求失败: {str(e)}', 'error')
+            print(f'忘记密码数据库错误: {e}')
             return render_template('forgot_password.html')
 
     return render_template('forgot_password.html')
@@ -275,43 +302,53 @@ def forgot_password():
 # 重置密码路由
 @app.route('/reset_password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
-    # 检查令牌是否有效
-    if token not in password_reset_tokens:
+    try:
+        # 检查令牌是否有效
+        query = "SELECT pr.user_id, pr.expiry, u.username, u.name FROM PASSWORD_RESET pr JOIN USER u ON pr.user_id = u.id WHERE pr.token = %s"
+        token_data = db.fetch_one(query, (token,))
+
+        if not token_data:
+            return render_template('reset_password.html', invalid_token=True)
+
+        # 检查令牌是否过期
+        expiry = datetime.strptime(token_data['expiry'], '%Y-%m-%d %H:%M:%S')
+        if datetime.now() > expiry:
+            # 删除过期令牌
+            db.delete('PASSWORD_RESET', {'token': token})
+            return render_template('reset_password.html', invalid_token=True)
+
+        username = token_data['username']
+
+        if request.method == 'POST':
+            password = request.form.get('password', '').strip()
+            confirm_password = request.form.get('confirm_password', '').strip()
+
+            if not password or not confirm_password:
+                flash('密码和确认密码不能为空', 'error')
+                return render_template('reset_password.html', token=token)
+
+            if password != confirm_password:
+                flash('两次输入的密码不一致', 'error')
+                return render_template('reset_password.html', token=token)
+
+            if len(password) < 6:
+                flash('密码长度不能少于6位', 'error')
+                return render_template('reset_password.html', token=token)
+
+            # 更新密码
+            db.update('USER', {'password': password}, {'username': username})
+
+            # 删除已使用的令牌
+            db.delete('PASSWORD_RESET', {'token': token})
+
+            flash('密码已成功重置，请使用新密码登录', 'success')
+            return redirect(url_for('login'))
+
+        return render_template('reset_password.html', token=token)
+    except Exception as e:
+        flash(f'处理请求失败: {str(e)}', 'error')
+        print(f'重置密码数据库错误: {e}')
         return render_template('reset_password.html', invalid_token=True)
-
-    token_data = password_reset_tokens[token]
-    if datetime.now() > token_data['expiry']:
-        del password_reset_tokens[token]  # 删除过期令牌
-        return render_template('reset_password.html', invalid_token=True)
-
-    username = token_data['username']
-
-    if request.method == 'POST':
-        password = request.form.get('password', '').strip()
-        confirm_password = request.form.get('confirm_password', '').strip()
-
-        if not password or not confirm_password:
-            flash('密码和确认密码不能为空', 'error')
-            return render_template('reset_password.html', token=token)
-
-        if password != confirm_password:
-            flash('两次输入的密码不一致', 'error')
-            return render_template('reset_password.html', token=token)
-
-        if len(password) < 6:
-            flash('密码长度不能少于6位', 'error')
-            return render_template('reset_password.html', token=token)
-
-        # 更新密码
-        users[username]['password'] = password  # 实际项目中应该哈希存储
-
-        # 删除已使用的令牌
-        del password_reset_tokens[token]
-
-        flash('密码已成功重置，请使用新密码登录', 'success')
-        return redirect(url_for('login'))
-
-    return render_template('reset_password.html', token=token)
 
 
 # 仪表盘路由
@@ -341,7 +378,24 @@ def dashboard():
 @app.route('/user_management', methods=['GET', 'POST'])
 @admin_required
 def user_management():
-    global users
+    # 从数据库获取用户数据
+    try:
+        query = "SELECT u.username, u.name, u.email, IFNULL(r.name, '无角色') as role, u.is_active as status, u.created_at as create_time "
+        query += "FROM USER u LEFT JOIN USER_ROLE ur ON u.id = ur.user_id LEFT JOIN ROLE r ON ur.role_id = r.id"
+        users_data = db.fetch_all(query)
+        # 转换为字典格式以便模板使用
+        users = {}
+        for user in users_data:
+            users[user['username']] = {
+                'name': user['name'],
+                'email': user['email'],
+                'role': user['role'],
+                'status': user['status'],
+                'create_time': user['create_time']
+            }
+    except Exception as e:
+        flash(f'获取用户数据失败: {str(e)}', 'error')
+        users = {}
 
     if request.method == 'POST':
         action = request.form.get('action', '').strip()
@@ -370,16 +424,44 @@ def user_management():
                 flash('邮箱格式不正确', 'error')
                 return redirect(url_for('user_management'))
 
-            # 添加用户
-            users[username] = {
-                'password': password,
-                'name': name,
-                'role': role,
-                'status': 'active',
-                'create_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'email': email
-            }
-            flash(f'用户 "{name}" 创建成功', 'success')
+            # 添加用户到数据库
+            try:
+                # 插入用户到USER表
+                user_id = db.insert('USER', {
+                    'username': username,
+                    'password_hash': password,
+                    'name': name,
+                    'email': email,
+                    'is_active': 1,
+                    'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                })
+                
+                # 插入用户角色到USER_ROLE表
+                role_result = db.fetch_one("SELECT id FROM ROLE WHERE name = %s", (role,))
+                if role_result is None:
+                    # 如果未找到指定角色，使用默认角色（假设存在'user'角色）
+                    role_result = db.fetch_one("SELECT id FROM ROLE WHERE name = 'user'")
+                    if role_result is None:
+                        flash('角色表中未找到默认角色，请联系管理员', 'error')
+                        return redirect(url_for('user_management'))
+                role_id = role_result['id']
+                db.insert('USER_ROLE', {
+                    'user_id': user_id,
+                    'role_id': role_id
+                })
+                
+                # 更新内存中的用户列表
+                users[username] = {
+                    'name': name,
+                    'email': email,
+                    'role': role,
+                    'status': 1,
+                    'create_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+                flash(f'用户 "{name}" 创建成功', 'success')
+            except Exception as e:
+                flash(f'添加用户失败: {str(e)}', 'error')
+                print(f'添加用户数据库错误: {e}')
             return redirect(url_for('user_management'))
 
         elif action == 'edit':
@@ -406,12 +488,29 @@ def user_management():
                 flash('不能修改自身角色为非管理员', 'error')
                 return redirect(url_for('user_management'))
 
-            # 更新用户
-            users[username]['name'] = name
-            users[username]['role'] = role
-            users[username]['status'] = status
-            users[username]['email'] = email
-            flash(f'用户 "{name}" 更新成功', 'success')
+            # 更新用户到数据库
+            try:
+                # 更新USER表
+                db.update('USER', {
+                    'name': name,
+                    'email': email,
+                    'is_active': 1 if status == 'active' else 0
+                }, {'username': username})
+                
+                # 更新用户角色
+                user_id = db.fetch_one("SELECT id FROM USER WHERE username = %s", (username,))['id']
+                role_id = db.fetch_one("SELECT id FROM ROLE WHERE name = %s", (role,))['id']
+                db.update('USER_ROLE', {'role_id': role_id}, {'user_id': user_id})
+                
+                # 更新内存中的用户列表
+                users[username]['name'] = name
+                users[username]['role'] = role
+                users[username]['status'] = 1 if status == 'active' else 0
+                users[username]['email'] = email
+                flash(f'用户 "{name}" 更新成功', 'success')
+            except Exception as e:
+                flash(f'更新用户失败: {str(e)}', 'error')
+                print(f'更新用户数据库错误: {e}')
             return redirect(url_for('user_management'))
 
         elif action == 'delete':
@@ -425,11 +524,23 @@ def user_management():
                 flash('不能删除当前登录用户', 'error')
                 return redirect(url_for('user_management'))
 
-            if username in users:
-                del users[username]
+            try:
+                # 从数据库删除用户
+                user_id = db.fetch_one("SELECT id FROM USER WHERE username = %s", (username,))['id']
+                
+                # 删除用户角色关联
+                db.delete('USER_ROLE', {'user_id': user_id})
+                
+                # 删除用户
+                db.delete('USER', {'id': user_id})
+                
+                # 更新内存中的用户列表
+                if username in users:
+                    del users[username]
                 flash('用户已删除', 'success')
-            else:
-                flash('用户不存在', 'error')
+            except Exception as e:
+                flash(f'删除用户失败: {str(e)}', 'error')
+                print(f'删除用户数据库错误: {e}')
 
             return redirect(url_for('user_management'))
 
@@ -449,8 +560,18 @@ def user_management():
                 flash('密码长度不能少于6位', 'error')
                 return redirect(url_for('user_management'))
 
-            users[username]['password'] = new_password
-            flash(f'用户 "{users[username]["name"]}" 密码已重置', 'success')
+            try:
+                # 更新数据库中的密码
+                db.update('USER', {
+                    'password_hash': new_password
+                }, {'username': username})
+                
+                # 更新内存中的用户信息
+                users[username]['password'] = new_password
+                flash(f'用户 "{users[username]["name"]}" 密码已重置', 'success')
+            except Exception as e:
+                flash(f'重置密码失败: {str(e)}', 'error')
+                print(f'重置密码数据库错误: {e}')
             return redirect(url_for('user_management'))
 
     return render_template('user_management.html',
@@ -466,63 +587,121 @@ def user_management():
 @app.route('/email_sender_config', methods=['GET', 'POST'])
 @login_required
 def email_sender_config():
-    global email_config
     if request.method == 'POST':
-        # 保存发件人配置
-        email_config = {
+        # 保存发件人配置到数据库
+        config_id = request.form.get('config_id', '')
+        config_data = {
             'smtp_server': request.form.get('smtp_server', '').strip(),
             'smtp_port': int(request.form.get('smtp_port', 587)),
             'sender_email': request.form.get('sender_email', '').strip(),
             'sender_password': request.form.get('sender_password', '').strip(),
-            'use_tls': request.form.get('use_tls') == 'on'
+            'use_ssl': request.form.get('use_tls') == 'on',
+            'sender_name': request.form.get('sender_name', '').strip(),
+            'is_default': request.form.get('is_default') == 'on',
+            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
-        flash('邮件服务器配置已保存', 'success')
+
+        try:
+            if config_id:
+                # 更新现有配置
+                db.update('EMAIL_CONFIG', config_data, {'id': config_id})
+                flash('邮件服务器配置已更新', 'success')
+            else:
+                # 添加新配置
+                config_data['id'] = str(uuid.uuid4())[:8]
+                config_data['created_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.insert('EMAIL_CONFIG', config_data)
+                flash('邮件服务器配置已保存', 'success')
+        except Exception as e:
+            flash(f'保存配置失败: {str(e)}', 'error')
+            print(f'保存邮件配置数据库错误: {e}')
+
         return redirect(url_for('email_sender_config'))
-    return render_template('email_sender_config.html',
-                           username=session['name'],
-                           config=email_config)
+    else:
+        # 从数据库获取配置
+        try:
+            configs = db.fetch_all('SELECT * FROM EMAIL_CONFIG')
+            # 查找默认配置
+            default_config = next((c for c in configs if c['is_default']), None) if configs else None
+        except Exception as e:
+            flash(f'获取配置失败: {str(e)}', 'error')
+            print(f'获取邮件配置数据库错误: {e}')
+            configs = []
+            default_config = None
+
+        return render_template('email_sender_config.html',
+                               username=session['name'],
+                               configs=configs,
+                               default_config=default_config)
 
 # 邮件收件人配置路由
 @app.route('/email_recipients_config', methods=['GET', 'POST'])
 @login_required
 def email_recipients_config():
-    global email_recipients
     if request.method == 'POST':
-        # 添加收件人
+        # 添加收件人到数据库
         email = request.form.get('email', '').strip()
         name = request.form.get('name', '').strip()
+        recipient_type = request.form.get('type', 'to')
+        is_active = request.form.get('is_active') == 'on'
+
         if not email or not name:
             flash('邮箱和姓名不能为空', 'error')
             return redirect(url_for('email_recipients_config'))
         if '@' not in email:
             flash('邮箱格式不正确', 'error')
             return redirect(url_for('email_recipients_config'))
-        if any(r['email'] == email for r in email_recipients):
-            flash(f'邮箱 "{email}" 已存在', 'error')
-            return redirect(url_for('email_recipients_config'))
-        email_recipients.append({
-            'id': str(uuid.uuid4())[:8],
-            'email': email,
-            'name': name,
-            'is_active': request.form.get('is_active') == 'on',
-            'create_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        })
-        flash(f'收件人 "{name}" 添加成功', 'success')
+
+        try:
+            # 检查是否已存在
+            existing = db.fetch_one('SELECT id FROM EMAIL_RECIPIENT WHERE email = %s', (email,))
+            if existing:
+                flash(f'邮箱 "{email}" 已存在', 'error')
+                return redirect(url_for('email_recipients_config'))
+
+            # 插入新收件人
+            recipient_id = str(uuid.uuid4())[:8]
+            db.insert('EMAIL_RECIPIENT', {
+                'id': recipient_id,
+                'email': email,
+                'name': name,
+                'type': recipient_type,
+                'is_active': is_active,
+                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            })
+            flash(f'收件人 "{name}" 添加成功', 'success')
+        except Exception as e:
+            flash(f'添加收件人失败: {str(e)}', 'error')
+            print(f'添加收件人数据库错误: {e}')
+
         return redirect(url_for('email_recipients_config'))
-    return render_template('email_recipients_config.html',
-                           username=session['name'],
-                           recipients=email_recipients)
+    else:
+        # 从数据库获取收件人列表
+        try:
+            recipients = db.fetch_all('SELECT * FROM EMAIL_RECIPIENT ORDER BY created_at DESC')
+        except Exception as e:
+            flash(f'获取收件人列表失败: {str(e)}', 'error')
+            print(f'获取收件人数据库错误: {e}')
+            recipients = []
+
+        return render_template('email_recipients_config.html',
+                               username=session['name'],
+                               recipients=recipients)
 
 # 删除收件人路由
 @app.route('/delete_recipient/<recipient_id>', methods=['POST'])
 @login_required
 def delete_recipient(recipient_id):
-    global email_recipients
-    original_length = len(email_recipients)
-    email_recipients = [r for r in email_recipients if r['id'] != recipient_id]
-    if len(email_recipients) < original_length:
-        return jsonify({'status': 'success', 'message': '收件人已删除'})
-    return jsonify({'status': 'error', 'message': '未找到收件人'})
+    try:
+        # 从数据库删除收件人
+        affected_rows = db.delete('EMAIL_RECIPIENT', {'id': recipient_id})
+        if affected_rows > 0:
+            return jsonify({'status': 'success', 'message': '收件人已删除'})
+        else:
+            return jsonify({'status': 'error', 'message': '未找到收件人'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'删除失败: {str(e)}'})
 
 # 邮件配置首页（重定向到发件人配置）
 @app.route('/email_config')
@@ -586,8 +765,6 @@ def mock_data():
 @app.route('/mock_config', methods=['GET', 'POST'])
 @login_required
 def mock_config():
-    global mock_interfaces
-
     if request.method == 'POST':
         interface_id = request.form.get('id') or str(uuid.uuid4())
         name = request.form.get('name', '').strip()
@@ -596,7 +773,8 @@ def mock_config():
         status_code = int(request.form.get('status_code', 200))
         response = request.form.get('response', '').strip()
         description = request.form.get('description', '').strip()
-        status = 'active' if request.form.get('status') else 'inactive'
+        is_active = request.form.get('status') is not None
+        project_id = request.form.get('project_id', '')
 
         # 验证数据
         if not name:
@@ -611,18 +789,8 @@ def mock_config():
             flash('状态码必须在100-599之间', 'error')
             return redirect(url_for('mock_config'))
 
-        # 验证路径+方法唯一性
-        duplicate = False
-        for int_id, int_data in mock_interfaces.items():
-            if int_id != interface_id and int_data['path'] == path and int_data['method'] == method:
-                duplicate = True
-                break
-        if duplicate:
-            flash(f'该路径在{method}方法下已存在', 'error')
-            return redirect(url_for('mock_config'))
-
         # 验证响应JSON格式
-        parsed_response = {}
+        parsed_response = {} 
         if response:
             try:
                 parsed_response = json.loads(response)
@@ -630,40 +798,88 @@ def mock_config():
                 flash('响应数据不是有效的JSON格式', 'error')
                 return redirect(url_for('mock_config'))
 
-        # 保存接口
-        mock_interfaces[interface_id] = {
-            'id': interface_id,
-            'name': name,
-            'path': path,
-            'method': method,
-            'status_code': status_code,
-            'response': parsed_response,
-            'description': description,
-            'status': status,
-            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
+        try:
+            # 验证路径+方法唯一性
+            existing = None
+            if interface_id:
+                existing = db.fetch_one('''
+                    SELECT id FROM MOCK_INTERFACE 
+                    WHERE path = %s AND method = %s AND id != %s
+                ''', (path, method, interface_id))
+            else:
+                existing = db.fetch_one('''
+                    SELECT id FROM MOCK_INTERFACE 
+                    WHERE path = %s AND method = %s
+                ''', (path, method))
 
-        flash(f'接口「{name}」保存成功', 'success')
+            if existing:
+                flash(f'该路径在{method}方法下已存在', 'error')
+                return redirect(url_for('mock_config'))
+
+            # 保存接口到数据库
+            interface_data = {
+                'name': name,
+                'path': path,
+                'method': method,
+                'status_code': status_code,
+                'response_content': response,
+                'description': description,
+                'is_active': is_active,
+                'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+
+            if project_id:
+                interface_data['project_id'] = project_id
+
+            if interface_id:
+                # 更新现有接口
+                db.update('MOCK_INTERFACE', interface_data, {'id': interface_id})
+                flash(f'接口「{name}」更新成功', 'success')
+            else:
+                # 添加新接口
+                interface_data['id'] = interface_id
+                interface_data['created_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.insert('MOCK_INTERFACE', interface_data)
+                flash(f'接口「{name}」添加成功', 'success')
+        except Exception as e:
+            flash(f'保存接口失败: {str(e)}', 'error')
+            print(f'保存MOCK接口数据库错误: {e}')
+
         return redirect(url_for('mock_config'))
 
-    return render_template('mock_config.html',
-                           username=session['name'],
-                           interfaces=mock_interfaces)
+    else:
+        # 从数据库获取接口列表
+        try:
+            interfaces = db.fetch_all('SELECT * FROM MOCK_INTERFACE ORDER BY created_at DESC')
+            # 转换为字典形式以便模板使用
+            mock_interfaces = {interface['id']: interface for interface in interfaces}
+        except Exception as e:
+            flash(f'获取接口列表失败: {str(e)}', 'error')
+            print(f'获取MOCK接口数据库错误: {e}')
+            mock_interfaces = {}
+
+        return render_template('mock_config.html',
+                               username=session['name'],
+                               interfaces=mock_interfaces)
 
 
 # 删除MOCK接口路由
 @app.route('/delete_mock_interface', methods=['POST'])
 @login_required
 def delete_mock_interface():
-    global mock_interfaces
     interface_id = request.form.get('id', '').strip()
 
-    if interface_id in mock_interfaces:
-        del mock_interfaces[interface_id]
-        return jsonify({'success': True, 'message': '接口已删除'})
-    else:
-        return jsonify({'success': False, 'message': '接口不存在'}), 404
+    try:
+        if interface_id:
+            affected_rows = db.delete('MOCK_INTERFACE', {'id': interface_id})
+            if affected_rows > 0:
+                return jsonify({'success': True, 'message': '接口已删除'})
+            else:
+                return jsonify({'success': False, 'message': '接口不存在'}), 404
+        else:
+            return jsonify({'success': False, 'message': '接口ID不能为空'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'删除失败: {str(e)}'}), 500
 
 
 # MOCK接口调用页面
@@ -744,17 +960,31 @@ def execution_plan():  # 函数名必须匹配
 @app.route('/execution_plan/execution')
 @login_required
 def plan_execution():
-    # 这里可以添加获取计划执行状态的逻辑
-    # 示例数据，实际应根据业务逻辑获取
     plans_with_status = []
-    for plan in execution_plans:
-        # 查找该计划的最后一次执行记录
-        last_execution = next((log for log in execution_logs
-                              if log.get('plan_id') == plan['id']), None)
-        plans_with_status.append({
-            'plan': plan,
-            'last_execution': last_execution
-        })
+    try:
+        # 从数据库获取计划列表
+        execution_plans = db.fetch_all('SELECT * FROM EXECUTION_PLAN ORDER BY created_at DESC')
+        # 转换tasks字符串为列表
+        for plan in execution_plans:
+            plan['tasks'] = plan['tasks'].split(',') if plan['tasks'] else []
+            plan['day_of_week'] = plan['day_of_week'].split(',') if plan['day_of_week'] else []
+
+            # 查找该计划的最后一次执行记录
+            last_execution = db.fetch_one('''
+                SELECT * FROM EXECUTION_LOG 
+                WHERE plan_id = %s 
+                ORDER BY execution_time DESC 
+                LIMIT 1
+            ''', (plan['id'],))
+
+            plans_with_status.append({
+                'plan': plan,
+                'last_execution': last_execution
+            })
+    except Exception as e:
+        flash(f'获取计划执行状态失败: {str(e)}', 'error')
+        print(f'获取计划执行状态数据库错误: {e}')
+
     return render_template('execution_plan/execution.html',
                            username=session['name'],
                            plans_with_status=plans_with_status)
@@ -764,49 +994,62 @@ def plan_execution():
 @app.route('/execution_plan/config', methods=['GET', 'POST'])
 @login_required
 def plan_config():
-    global execution_plans
-
     if request.method == 'POST':
         action = request.form.get('action', '').strip()
 
         if action == 'add':
             # 添加新计划
             plan_id = str(uuid.uuid4())[:8]
-            new_plan = {
-                'id': plan_id,
-                'name': request.form.get('plan_name', '').strip(),
-                'description': request.form.get('description', '').strip(),
-                'type': request.form.get('execution_type', 'manual'),
-                'schedule': {
-                    'frequency': request.form.get('frequency', 'daily'),
-                    'time': request.form.get('execution_time', ''),
-                    'day_of_week': request.form.getlist('day_of_week'),
-                    'day_of_month': request.form.get('day_of_month', '')
-                },
-                'tasks': request.form.getlist('tasks[]'),
-                'status': 'active' if request.form.get('status') == 'on' else 'inactive',
-                'created_by': session['username'],
-                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
+            name = request.form.get('plan_name', '').strip()
+            description = request.form.get('description', '').strip()
+            execution_type = request.form.get('execution_type', 'manual')
+            frequency = request.form.get('frequency', 'daily')
+            execution_time = request.form.get('execution_time', '')
+            day_of_week = ','.join(request.form.getlist('day_of_week'))
+            day_of_month = request.form.get('day_of_month', '')
+            tasks = ','.join(request.form.getlist('tasks[]'))
+            is_active = request.form.get('status') == 'on'
+            created_by = session['username']
+            created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            updated_at = created_at
 
             # 验证计划名称
-            if not new_plan['name']:
+            if not name:
                 flash('计划名称不能为空', 'error')
                 return redirect(url_for('plan_config'))
 
             # 验证定时任务时间
-            if new_plan['type'] == 'scheduled' and not new_plan['schedule']['time']:
+            if execution_type == 'scheduled' and not execution_time:
                 flash('定时任务必须设置执行时间', 'error')
                 return redirect(url_for('plan_config'))
 
             # 验证至少选择一个任务
-            if not new_plan['tasks']:
+            if not tasks:
                 flash('至少需要选择一个测试任务', 'error')
                 return redirect(url_for('plan_config'))
 
-            execution_plans.append(new_plan)
-            flash(f'执行计划 "{new_plan["name"]}" 创建成功', 'success')
+            try:
+                # 插入新计划到数据库
+                db.insert('EXECUTION_PLAN', {
+                    'id': plan_id,
+                    'name': name,
+                    'description': description,
+                    'type': execution_type,
+                    'frequency': frequency,
+                    'execution_time': execution_time,
+                    'day_of_week': day_of_week,
+                    'day_of_month': day_of_month,
+                    'tasks': tasks,
+                    'is_active': is_active,
+                    'created_by': created_by,
+                    'created_at': created_at,
+                    'updated_at': updated_at
+                })
+                flash(f'执行计划 "{name}" 创建成功', 'success')
+            except Exception as e:
+                flash(f'创建计划失败: {str(e)}', 'error')
+                print(f'创建执行计划数据库错误: {e}')
+
             return redirect(url_for('plan_config'))
 
         elif action == 'edit':
@@ -816,40 +1059,57 @@ def plan_config():
                 flash('计划ID不能为空', 'error')
                 return redirect(url_for('plan_config'))
 
-            for plan in execution_plans:
-                if plan['id'] == plan_id:
-                    plan['name'] = request.form.get('plan_name', '').strip()
-                    plan['description'] = request.form.get('description', '').strip()
-                    plan['type'] = request.form.get('execution_type', 'manual')
-                    plan['schedule'] = {
-                        'frequency': request.form.get('frequency', 'daily'),
-                        'time': request.form.get('execution_time', ''),
-                        'day_of_week': request.form.getlist('day_of_week'),
-                        'day_of_month': request.form.get('day_of_month', '')
-                    }
-                    plan['tasks'] = request.form.getlist('tasks[]')
-                    plan['status'] = 'active' if request.form.get('status') == 'on' else 'inactive'
-                    plan['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            name = request.form.get('plan_name', '').strip()
+            description = request.form.get('description', '').strip()
+            execution_type = request.form.get('execution_type', 'manual')
+            frequency = request.form.get('frequency', 'daily')
+            execution_time = request.form.get('execution_time', '')
+            day_of_week = ','.join(request.form.getlist('day_of_week'))
+            day_of_month = request.form.get('day_of_month', '')
+            tasks = ','.join(request.form.getlist('tasks[]'))
+            is_active = request.form.get('status') == 'on'
+            updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-                    # 验证计划名称
-                    if not plan['name']:
-                        flash('计划名称不能为空', 'error')
-                        return redirect(url_for('plan_config'))
+            # 验证计划名称
+            if not name:
+                flash('计划名称不能为空', 'error')
+                return redirect(url_for('plan_config'))
 
-                    # 验证定时任务时间
-                    if plan['type'] == 'scheduled' and not plan['schedule']['time']:
-                        flash('定时任务必须设置执行时间', 'error')
-                        return redirect(url_for('plan_config'))
+            # 验证定时任务时间
+            if execution_type == 'scheduled' and not execution_time:
+                flash('定时任务必须设置执行时间', 'error')
+                return redirect(url_for('plan_config'))
 
-                    # 验证至少选择一个任务
-                    if not plan['tasks']:
-                        flash('至少需要选择一个测试任务', 'error')
-                        return redirect(url_for('plan_config'))
+            # 验证至少选择一个任务
+            if not tasks:
+                flash('至少需要选择一个测试任务', 'error')
+                return redirect(url_for('plan_config'))
 
-                    flash(f'执行计划 "{plan["name"]}" 更新成功', 'success')
-                    return redirect(url_for('plan_config'))
+            try:
+                # 更新计划到数据库
+                db.update('EXECUTION_PLAN', {
+                    'name': name,
+                    'description': description,
+                    'type': execution_type,
+                    'frequency': frequency,
+                    'execution_time': execution_time,
+                    'day_of_week': day_of_week,
+                    'day_of_month': day_of_month,
+                    'tasks': tasks,
+                    'is_active': is_active,
+                    'updated_at': updated_at
+                }, {'id': plan_id})
 
-            flash('未找到指定的执行计划', 'error')
+                # 检查是否有更新成功
+                updated_plan = db.fetch_one('SELECT id FROM EXECUTION_PLAN WHERE id = %s', (plan_id,))
+                if updated_plan:
+                    flash(f'执行计划 "{name}" 更新成功', 'success')
+                else:
+                    flash('未找到指定的执行计划', 'error')
+            except Exception as e:
+                flash(f'更新计划失败: {str(e)}', 'error')
+                print(f'更新执行计划数据库错误: {e}')
+
             return redirect(url_for('plan_config'))
 
         elif action == 'delete':
@@ -859,14 +1119,16 @@ def plan_config():
                 flash('计划ID不能为空', 'error')
                 return redirect(url_for('plan_config'))
 
-
-            original_count = len(execution_plans)
-            execution_plans = [p for p in execution_plans if p['id'] != plan_id]
-
-            if len(execution_plans) < original_count:
-                flash('执行计划已删除', 'success')
-            else:
-                flash('未找到指定的执行计划', 'error')
+            try:
+                # 从数据库删除计划
+                affected_rows = db.delete('EXECUTION_PLAN', {'id': plan_id})
+                if affected_rows > 0:
+                    flash('执行计划已删除', 'success')
+                else:
+                    flash('未找到指定的执行计划', 'error')
+            except Exception as e:
+                flash(f'删除计划失败: {str(e)}', 'error')
+                print(f'删除执行计划数据库错误: {e}')
 
             return redirect(url_for('plan_config'))
 
@@ -878,6 +1140,18 @@ def plan_config():
         {'id': 'task4', 'name': '数据同步测试'}
     ]
 
+    try:
+        # 从数据库获取计划列表
+        execution_plans = db.fetch_all('SELECT * FROM EXECUTION_PLAN ORDER BY created_at DESC')
+        # 转换tasks字符串为列表
+        for plan in execution_plans:
+            plan['tasks'] = plan['tasks'].split(',') if plan['tasks'] else []
+            plan['day_of_week'] = plan['day_of_week'].split(',') if plan['day_of_week'] else []
+    except Exception as e:
+        flash(f'获取计划列表失败: {str(e)}', 'error')
+        print(f'获取执行计划数据库错误: {e}')
+        execution_plans = []
+
     return render_template('execution_plan/config.html',
                            username=session['name'],
                            plans=execution_plans,
@@ -888,8 +1162,14 @@ def plan_config():
 @app.route('/execution_plan/logs')
 @login_required
 def execution_logs_page():
-    # 按时间倒序排列日志
-    sorted_logs = sorted(execution_logs, key=lambda x: x['time'], reverse=True)
+    try:
+        # 从数据库获取日志列表
+        sorted_logs = db.fetch_all('SELECT * FROM EXECUTION_LOG ORDER BY execution_time DESC')
+    except Exception as e:
+        flash(f'获取执行日志失败: {str(e)}', 'error')
+        print(f'获取执行日志数据库错误: {e}')
+        sorted_logs = []
+
     return render_template('execution_plan/logs.html',
                            username=session['name'],
                            logs=sorted_logs)
@@ -898,11 +1178,14 @@ def execution_logs_page():
 @app.route('/execution_plan/logs/<log_id>')
 @login_required
 def log_details(log_id):
-    # 查找指定ID的日志
-    log = next((log for log in execution_logs if log['id'] == log_id), None)
-    if not log:
-        return jsonify({'status': 'error', 'message': '未找到日志记录'}), 404
-    return jsonify(log)
+    try:
+        # 从数据库获取日志详情
+        log = db.fetch_one('SELECT * FROM EXECUTION_LOG WHERE id = %s', (log_id,))
+        if not log:
+            return jsonify({'status': 'error', 'message': '未找到日志记录'}), 404
+        return jsonify(log)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'获取日志详情失败: {str(e)}'}), 500
 
 
 
@@ -913,15 +1196,6 @@ def log_details(log_id):
 ###
 
 ### 接口测试模块 - 后端实现 ###
-
-# 数据存储结构（实际项目中应使用数据库）
-projects = []
-test_case_groups = []
-test_cases = []
-global_variables = []
-scheduled_tasks = []
-test_reports = []
-
 
 # 权限装饰器 - 仅超级管理员和项目管理员可访问
 def project_admin_required(f):
@@ -935,9 +1209,14 @@ def project_admin_required(f):
             return f(*args, **kwargs)
 
         # 检查是否是项目管理员
-        project = next((p for p in projects if p['id'] == project_id), None)
-        if not project or project.get('manager_id') != session.get('user_id'):
-            flash('权限不足：只有超级管理员和项目管理员可以执行此操作', 'error')
+        try:
+            project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (project_id,))
+            if not project or project.get('manager_id') != session.get('username'):
+                flash('权限不足：只有超级管理员和项目管理员可以执行此操作', 'error')
+                return redirect(url_for('api_test'))
+        except Exception as e:
+            flash(f'检查项目权限失败: {str(e)}', 'error')
+            print(f'检查项目权限数据库错误: {e}')
             return redirect(url_for('api_test'))
 
         return f(*args, **kwargs)
@@ -955,7 +1234,21 @@ def api_test():
 def api_test_projects():
     """项目管理首页"""
     search = request.args.get('search', '').strip()
-    filtered_projects = [p for p in projects if search.lower() in p['name'].lower()] if search else projects
+    try:
+        if search:
+            # 带搜索条件查询
+            filtered_projects = db.fetch_all('''
+                SELECT * FROM API_TEST_PROJECT 
+                WHERE LOWER(name) LIKE %s 
+                ORDER BY created_at DESC
+            ''', (f'%{search.lower()}%',))
+        else:
+            # 查询所有项目
+            filtered_projects = db.fetch_all('SELECT * FROM API_TEST_PROJECT ORDER BY created_at DESC')
+    except Exception as e:
+        flash(f'获取项目列表失败: {str(e)}', 'error')
+        print(f'获取项目列表数据库错误: {e}')
+        filtered_projects = []
 
     return render_template('api_test/projects.html',
                            username=session['name'],
@@ -971,24 +1264,37 @@ def create_project():
         flash('权限不足：只有管理员可以创建项目', 'error')
         return redirect(url_for('api_test_projects'))
 
-    project = {
-        'id': str(uuid.uuid4())[:8],
-        'name': request.form.get('name'),
-        'version': request.form.get('version', '1.0'),
-        'description': request.form.get('description', ''),
-        'status': 'active',
-        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'manager_id': session.get('username')
-    }
+    project_id = str(uuid.uuid4())[:8]
+    name = request.form.get('name')
+    version = request.form.get('version', '1.0')
+    description = request.form.get('description', '')
+    status = 'active'
+    created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    updated_at = created_at
+    manager_id = session.get('username')
 
     # 验证必填字段
-    if not project['name']:
+    if not name:
         flash('项目名称不能为空', 'error')
         return redirect(url_for('api_test_projects'))
 
-    projects.append(project)
-    flash(f'项目 "{project["name"]}" 创建成功', 'success')
+    try:
+        # 插入新项目到数据库
+        db.insert('API_TEST_PROJECT', {
+            'id': project_id,
+            'name': name,
+            'version': version,
+            'description': description,
+            'status': status,
+            'created_at': created_at,
+            'updated_at': updated_at,
+            'manager_id': manager_id
+        })
+        flash(f'项目 "{name}" 创建成功', 'success')
+    except Exception as e:
+        flash(f'创建项目失败: {str(e)}', 'error')
+        print(f'创建项目数据库错误: {e}')
+
     return redirect(url_for('api_test_projects'))
 
 
@@ -996,13 +1302,22 @@ def create_project():
 @login_required
 def get_project(project_id):
     """查看项目详情"""
-    project = next((p for p in projects if p['id'] == project_id), None)
-    if not project:
-        flash('项目不存在', 'error')
-        return redirect(url_for('api_test_projects'))
+    try:
+        project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (project_id,))
+        if not project:
+            flash('项目不存在', 'error')
+            return redirect(url_for('api_test_projects'))
 
-    # 获取项目下的用例组
-    groups = [g for g in test_case_groups if g['project_id'] == project_id]
+        # 获取项目下的用例组
+        groups = db.fetch_all('''
+            SELECT * FROM API_TEST_GROUP 
+            WHERE project_id = %s 
+            ORDER BY created_at DESC
+        ''', (project_id,))
+    except Exception as e:
+        flash(f'获取项目详情失败: {str(e)}', 'error')
+        print(f'获取项目详情数据库错误: {e}')
+        return redirect(url_for('api_test_projects'))
 
     return render_template('api_test/project_detail.html',
                            project=project,
@@ -1014,16 +1329,28 @@ def get_project(project_id):
 @project_admin_required
 def update_project(project_id):
     """编辑项目"""
-    project = next((p for p in projects if p['id'] == project_id), None)
-    if not project:
-        return jsonify({'success': False, 'message': '项目不存在'}), 404
+    try:
+        # 检查项目是否存在
+        project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (project_id,))
+        if not project:
+            return jsonify({'success': False, 'message': '项目不存在'}), 404
 
-    project['name'] = request.json.get('name', project['name'])
-    project['version'] = request.json.get('version', project['version'])
-    project['description'] = request.json.get('description', project['description'])
-    project['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        name = request.json.get('name', project['name'])
+        version = request.json.get('version', project['version'])
+        description = request.json.get('description', project['description'])
+        updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    return jsonify({'success': True, 'message': '项目更新成功'})
+        # 更新项目到数据库
+        db.update('API_TEST_PROJECT', {
+            'name': name,
+            'version': version,
+            'description': description,
+            'updated_at': updated_at
+        }, {'id': project_id})
+
+        return jsonify({'success': True, 'message': '项目更新成功'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'项目更新失败: {str(e)}'}), 500
 
 
 @app.route('/api_test/projects/<project_id>/status', methods=['PATCH'])
@@ -1031,18 +1358,28 @@ def update_project(project_id):
 @project_admin_required
 def toggle_project_status(project_id):
     """启用/禁用项目"""
-    project = next((p for p in projects if p['id'] == project_id), None)
-    if not project:
-        return jsonify({'success': False, 'message': '项目不存在'}), 404
+    try:
+        # 检查项目是否存在
+        project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (project_id,))
+        if not project:
+            return jsonify({'success': False, 'message': '项目不存在'}), 404
 
-    project['status'] = 'inactive' if project['status'] == 'active' else 'active'
-    project['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        new_status = 'inactive' if project['status'] == 'active' else 'active'
+        updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    return jsonify({
-        'success': True,
-        'message': f'项目已{"禁用" if project["status"] == "inactive" else "启用"}',
-        'status': project['status']
-    })
+        # 更新项目状态到数据库
+        db.update('API_TEST_PROJECT', {
+            'status': new_status,
+            'updated_at': updated_at
+        }, {'id': project_id})
+
+        return jsonify({
+            'success': True,
+            'message': f'项目已{"禁用" if new_status == "inactive" else "启用"}',
+            'status': new_status
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'项目状态更新失败: {str(e)}'}), 500
 
 
 @app.route('/api_test/projects/<project_id>', methods=['DELETE'])
@@ -1050,13 +1387,35 @@ def toggle_project_status(project_id):
 @project_admin_required
 def delete_project(project_id):
     """删除项目"""
-    global projects
-    project = next((p for p in projects if p['id'] == project_id), None)
-    if not project:
-        return jsonify({'success': False, 'message': '项目不存在'}), 404
+    try:
+        # 检查项目是否存在
+        project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (project_id,))
+        if not project:
+            return jsonify({'success': False, 'message': '项目不存在'}), 404
 
-    projects = [p for p in projects if p['id'] != project_id]
-    return jsonify({'success': True, 'message': '项目已删除'})
+        # 开始事务
+        db.begin_transaction()
+
+        try:
+            # 删除项目下的所有用例组
+            db.delete('API_TEST_GROUP', {'project_id': project_id})
+
+            # 删除项目下的所有接口用例
+            db.delete('API_TEST_CASE', {'project_id': project_id})
+
+            # 删除项目
+            db.delete('API_TEST_PROJECT', {'id': project_id})
+
+            # 提交事务
+            db.commit_transaction()
+
+            return jsonify({'success': True, 'message': '项目已删除'})
+        except Exception as e:
+            # 回滚事务
+            db.rollback_transaction()
+            return jsonify({'success': False, 'message': f'项目删除失败: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'检查项目失败: {str(e)}'}), 500
 
 
 # 4.2 用例组管理
@@ -1064,37 +1423,55 @@ def delete_project(project_id):
 @login_required
 def create_test_group(project_id):
     """创建用例组"""
-    project = next((p for p in projects if p['id'] == project_id), None)
-    if not project:
-        flash('项目不存在', 'error')
-        return redirect(url_for('get_project', project_id=project_id))
+    try:
+        # 检查项目是否存在
+        project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (project_id,))
+        if not project:
+            flash('项目不存在', 'error')
+            return redirect(url_for('get_project', project_id=project_id))
 
-    group = {
-        'id': str(uuid.uuid4())[:8],
-        'project_id': project_id,
-        'name': request.form.get('name'),
-        'priority': request.form.get('priority', 'P2'),
-        'description': request.form.get('description', ''),
-        'service': request.form.get('service', ''),
-        'sprint': request.form.get('sprint', ''),
-        'story_id': request.form.get('story_id', ''),
-        'test_case_id': request.form.get('test_case_id', ''),
-        'status': 'active',
-        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    }
+        group_id = str(uuid.uuid4())[:8]
+        name = request.form.get('name')
+        priority = request.form.get('priority', 'P2')
+        description = request.form.get('description', '')
+        service = request.form.get('service', '')
+        sprint = request.form.get('sprint', '')
+        story_id = request.form.get('story_id', '')
+        test_case_id = request.form.get('test_case_id', '')
+        status = 'active'
+        created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        updated_at = created_at
 
-    # 验证必填字段
-    if not group['name']:
-        flash('用例组名称不能为空', 'error')
-        return redirect(url_for('get_project', project_id=project_id))
+        # 验证必填字段
+        if not name:
+            flash('用例组名称不能为空', 'error')
+            return redirect(url_for('get_project', project_id=project_id))
 
-    if group['priority'] not in ['P1', 'P2']:
-        flash('优先级必须是P1或P2', 'error')
-        return redirect(url_for('get_project', project_id=project_id))
+        if priority not in ['P1', 'P2']:
+            flash('优先级必须是P1或P2', 'error')
+            return redirect(url_for('get_project', project_id=project_id))
 
-    test_case_groups.append(group)
-    flash(f'用例组 "{group["name"]}" 创建成功', 'success')
+        # 插入新用例组到数据库
+        db.insert('API_TEST_GROUP', {
+            'id': group_id,
+            'project_id': project_id,
+            'name': name,
+            'priority': priority,
+            'description': description,
+            'service': service,
+            'sprint': sprint,
+            'story_id': story_id,
+            'test_case_id': test_case_id,
+            'status': status,
+            'created_at': created_at,
+            'updated_at': updated_at
+        })
+
+        flash(f'用例组 "{name}" 创建成功', 'success')
+    except Exception as e:
+        flash(f'创建用例组失败: {str(e)}', 'error')
+        print(f'创建用例组数据库错误: {e}')
+
     return redirect(url_for('get_project', project_id=project_id))
 
 
@@ -1102,41 +1479,79 @@ def create_test_group(project_id):
 @login_required
 def copy_test_group(group_id):
     """复制用例组"""
-    original_group = next((g for g in test_case_groups if g['id'] == group_id), None)
-    if not original_group:
-        return jsonify({'success': False, 'message': '用例组不存在'}), 404
+    try:
+        # 检查原始用例组是否存在
+        original_group = db.fetch_one('SELECT * FROM API_TEST_GROUP WHERE id = %s', (group_id,))
+        if not original_group:
+            return jsonify({'success': False, 'message': '用例组不存在'}), 404
 
-    # 创建新用例组
-    new_group = {
-        'id': str(uuid.uuid4())[:8],
-        'project_id': original_group['project_id'],
-        'name': f'Copy - {original_group["name"]}',
-        'priority': original_group['priority'],
-        'description': original_group['description'],
-        'service': original_group['service'],
-        'sprint': original_group['sprint'],
-        'story_id': original_group['story_id'],
-        'test_case_id': original_group['test_case_id'],
-        'status': original_group['status'],
-        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    }
+        # 开始事务
+        db.begin_transaction()
 
-    test_case_groups.append(new_group)
+        try:
+            # 创建新用例组
+            new_group_id = str(uuid.uuid4())[:8]
+            new_group_name = f'Copy - {original_group["name"]}'
+            created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            updated_at = created_at
 
-    # 复制用例组内的接口用例
-    original_cases = [c for c in test_cases if c['group_id'] == group_id]
-    for case in original_cases:
-        new_case = {**case,
-                    'id': str(uuid.uuid4())[:8],
-                    'group_id': new_group['id'],
-                    'name': f'Copy - {case["name"]}',
-                    'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    }
-        test_cases.append(new_case)
+            db.insert('API_TEST_GROUP', {
+                'id': new_group_id,
+                'project_id': original_group['project_id'],
+                'name': new_group_name,
+                'priority': original_group['priority'],
+                'description': original_group['description'],
+                'service': original_group['service'],
+                'sprint': original_group['sprint'],
+                'story_id': original_group['story_id'],
+                'test_case_id': original_group['test_case_id'],
+                'status': original_group['status'],
+                'created_at': created_at,
+                'updated_at': updated_at
+            })
 
-    return jsonify({'success': True, 'message': '用例组复制成功'})
+            # 复制用例组内的接口用例
+            original_cases = db.fetch_all('SELECT * FROM API_TEST_CASE WHERE group_id = %s', (group_id,))
+            for case in original_cases:
+                new_case_id = str(uuid.uuid4())[:8]
+                new_case_name = f'Copy - {case["name"]}'
+
+                # 复制case数据，不包括id和group_id
+                case_data = {
+                    'id': new_case_id,
+                    'group_id': new_group_id,
+                    'project_id': case['project_id'],
+                    'name': new_case_name,
+                    'method': case['method'],
+                    'protocol': case['protocol'],
+                    'domain': case['domain'],
+                    'route': case['route'],
+                    'service': case['service'],
+                    'sequence': case['sequence'],
+                    'description': case['description'],
+                    'clear_cookies': case['clear_cookies'],
+                    'status': case['status'],
+                    'created_at': created_at,
+                    'updated_at': updated_at,
+                    'headers': case['headers'],
+                    'params': case['params'],
+                    'initialization': case['initialization'],
+                    'variables': case['variables'],
+                    'validations': case['validations']
+                }
+
+                db.insert('API_TEST_CASE', case_data)
+
+            # 提交事务
+            db.commit_transaction()
+
+            return jsonify({'success': True, 'message': '用例组复制成功'})
+        except Exception as e:
+            # 回滚事务
+            db.rollback_transaction()
+            return jsonify({'success': False, 'message': f'复制用例组失败: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'检查用例组失败: {str(e)}'}), 500
 
 
 # 4.3 接口用例管理
@@ -1144,15 +1559,26 @@ def copy_test_group(group_id):
 @login_required
 def get_test_cases(group_id):
     """获取用例组下的接口用例"""
-    group = next((g for g in test_case_groups if g['id'] == group_id), None)
-    if not group:
-        flash('用例组不存在', 'error')
-        return redirect(url_for('api_test_projects'))
+    try:
+        # 检查用例组是否存在
+        group = db.fetch_one('SELECT * FROM API_TEST_GROUP WHERE id = %s', (group_id,))
+        if not group:
+            flash('用例组不存在', 'error')
+            return redirect(url_for('api_test_projects'))
 
-    project = next((p for p in projects if p['id'] == group['project_id']), None)
-    cases = [c for c in test_cases if c['group_id'] == group_id]
-    # 按sequence和创建时间排序
-    cases.sort(key=lambda x: (x['sequence'], x['created_at']))
+        # 获取项目信息
+        project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (group['project_id'],))
+
+        # 获取用例组下的接口用例
+        cases = db.fetch_all('''
+            SELECT * FROM API_TEST_CASE 
+            WHERE group_id = %s 
+            ORDER BY sequence, created_at
+        ''', (group_id,))
+    except Exception as e:
+        flash(f'获取接口用例失败: {str(e)}', 'error')
+        print(f'获取接口用例数据库错误: {e}')
+        return redirect(url_for('api_test_projects'))
 
     return render_template('api_test/test_cases.html',
                            project=project,
@@ -1164,47 +1590,72 @@ def get_test_cases(group_id):
 @login_required
 def create_test_case(group_id):
     """创建接口用例"""
-    group = next((g for g in test_case_groups if g['id'] == group_id), None)
-    if not group:
-        return jsonify({'success': False, 'message': '用例组不存在'}), 404
+    try:
+        # 检查用例组是否存在
+        group = db.fetch_one('SELECT * FROM API_TEST_GROUP WHERE id = %s', (group_id,))
+        if not group:
+            return jsonify({'success': False, 'message': '用例组不存在'}), 404
 
-    # 计算新用例的sequence（最大值+1）
-    group_cases = [c for c in test_cases if c['group_id'] == group_id]
-    max_sequence = max([c['sequence'] for c in group_cases], default=0)
+        # 计算新用例的sequence（最大值+1）
+        max_sequence_result = db.fetch_one('''
+            SELECT MAX(sequence) as max_seq FROM API_TEST_CASE WHERE group_id = %s
+        ''', (group_id,))
+        max_sequence = max_sequence_result['max_seq'] if max_sequence_result['max_seq'] is not None else 0
 
-    case = {
-        'id': str(uuid.uuid4())[:8],
-        'group_id': group_id,
-        'name': request.json.get('name'),
-        'method': request.json.get('method', 'GET'),
-        'protocol': request.json.get('protocol', 'HTTP'),
-        'domain': request.json.get('domain', ''),
-        'route': request.json.get('route', ''),
-        'service': request.json.get('service', ''),
-        'sequence': max_sequence + 1,
-        'description': request.json.get('description', ''),
-        'clear_cookies': request.json.get('clear_cookies', False),
-        'status': 'active',
-        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        # 其他详细信息将在编辑页面补充
-        'headers': [],
-        'params': {'type': 'raw', 'content': ''},
-        'initialization': None,
-        'variables': [],
-        'validations': []
-    }
+        case_id = str(uuid.uuid4())[:8]
+        name = request.json.get('name')
+        method = request.json.get('method', 'GET')
+        protocol = request.json.get('protocol', 'HTTP')
+        domain = request.json.get('domain', '')
+        route = request.json.get('route', '')
+        service = request.json.get('service', '')
+        sequence = max_sequence + 1
+        description = request.json.get('description', '')
+        clear_cookies = request.json.get('clear_cookies', False)
+        status = 'active'
+        created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        updated_at = created_at
+        headers = []
+        params = {'type': 'raw', 'content': ''}
+        initialization = None
+        variables = []
+        validations = []
 
-    # 验证必填字段
-    if not case['name'] or not case['method'] or not case['route']:
-        return jsonify({'success': False, 'message': '用例名称、请求方法和路由为必填项'}), 400
+        # 验证必填字段
+        if not name or not method or not route:
+            return jsonify({'success': False, 'message': '用例名称、请求方法和路由为必填项'}), 400
 
-    test_cases.append(case)
-    return jsonify({
-        'success': True,
-        'message': '接口用例创建成功',
-        'case_id': case['id']
-    })
+        # 插入新接口用例到数据库
+        db.insert('API_TEST_CASE', {
+            'id': case_id,
+            'group_id': group_id,
+            'project_id': group['project_id'],
+            'name': name,
+            'method': method,
+            'protocol': protocol,
+            'domain': domain,
+            'route': route,
+            'service': service,
+            'sequence': sequence,
+            'description': description,
+            'clear_cookies': clear_cookies,
+            'status': status,
+            'created_at': created_at,
+            'updated_at': updated_at,
+            'headers': headers,
+            'params': params,
+            'initialization': initialization,
+            'variables': variables,
+            'validations': validations
+        })
+
+        return jsonify({
+            'success': True,
+            'message': '接口用例创建成功',
+            'case_id': case_id
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'创建接口用例失败: {str(e)}'}), 500
 
 
 # 4.4 接口用例详情编辑
@@ -1212,19 +1663,28 @@ def create_test_case(group_id):
 @login_required
 def edit_test_case(case_id):
     """编辑接口用例详情"""
-    case = next((c for c in test_cases if c['id'] == case_id), None)
-    if not case:
-        flash('接口用例不存在', 'error')
+    try:
+        # 获取接口用例信息
+        case = db.fetch_one('SELECT * FROM API_TEST_CASE WHERE id = %s', (case_id,))
+        if not case:
+            flash('接口用例不存在', 'error')
+            return redirect(url_for('api_test_projects'))
+
+        # 获取用例组信息
+        group = db.fetch_one('SELECT * FROM API_TEST_GROUP WHERE id = %s', (case['group_id'],))
+
+        # 获取项目信息
+        project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (group['project_id'],))
+
+        # 获取环境配置（实际项目中应从环境配置模块获取）
+        environments = [
+            {'id': 'env1', 'name': '开发环境', 'domain': 'http://dev.api.com'},
+            {'id': 'env2', 'name': '测试环境', 'domain': 'http://test.api.com'}
+        ]
+    except Exception as e:
+        flash(f'获取接口用例详情失败: {str(e)}', 'error')
+        print(f'获取接口用例详情数据库错误: {e}')
         return redirect(url_for('api_test_projects'))
-
-    group = next((g for g in test_case_groups if g['id'] == case['group_id']), None)
-    project = next((p for p in projects if p['id'] == group['project_id']), None)
-
-    # 获取环境配置（实际项目中应从环境配置模块获取）
-    environments = [
-        {'id': 'env1', 'name': '开发环境', 'domain': 'http://dev.api.com'},
-        {'id': 'env2', 'name': '测试环境', 'domain': 'http://test.api.com'}
-    ]
 
     return render_template('api_test/edit_test_case.html',
                            project=project,
@@ -1237,17 +1697,28 @@ def edit_test_case(case_id):
 @login_required
 def update_test_case_params(case_id):
     """更新接口用例请求参数"""
-    case = next((c for c in test_cases if c['id'] == case_id), None)
-    if not case:
-        return jsonify({'success': False, 'message': '接口用例不存在'}), 404
+    try:
+        # 检查接口用例是否存在
+        case = db.fetch_one('SELECT * FROM API_TEST_CASE WHERE id = %s', (case_id,))
+        if not case:
+            return jsonify({'success': False, 'message': '接口用例不存在'}), 404
 
-    case['params'] = {
-        'type': request.json.get('type', 'raw'),
-        'content': request.json.get('content', '')
-    }
-    case['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        # 获取更新的参数配置
+        params = {
+            'type': request.json.get('type', 'raw'),
+            'content': request.json.get('content', '')
+        }
+        updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    return jsonify({'success': True, 'message': '请求参数更新成功'})
+        # 更新接口用例参数到数据库
+        db.update('API_TEST_CASE', {
+            'params': params,
+            'updated_at': updated_at
+        }, 'id = %s', (case_id,))
+
+        return jsonify({'success': True, 'message': '请求参数更新成功'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'更新请求参数失败: {str(e)}'}), 500
 
 
 # 4.5 全局参数配置
@@ -1255,20 +1726,28 @@ def update_test_case_params(case_id):
 @login_required
 def get_global_variables(project_id):
     """获取项目全局参数"""
-    project = next((p for p in projects if p['id'] == project_id), None)
-    if not project:
-        flash('项目不存在', 'error')
+    try:
+        # 检查项目是否存在
+        project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (project_id,))
+        if not project:
+            flash('项目不存在', 'error')
+            return redirect(url_for('api_test_projects'))
+
+        # 获取环境列表（实际项目中应从环境配置模块获取）
+        environments = [
+            {'id': 'env1', 'name': '开发环境', 'domain': 'http://dev.api.com'},
+            {'id': 'env2', 'name': '测试环境', 'domain': 'http://test.api.com'}
+        ]
+
+        # 获取指定环境的变量
+        env_id = request.args.get('env_id', environments[0]['id'] if environments else '')
+        variables = db.fetch_all('''
+            SELECT * FROM API_TEST_VARIABLE WHERE project_id = %s AND env_id = %s
+        ''', (project_id, env_id))
+    except Exception as e:
+        flash(f'获取全局参数失败: {str(e)}', 'error')
+        print(f'获取全局参数数据库错误: {e}')
         return redirect(url_for('api_test_projects'))
-
-    # 获取环境列表
-    environments = [
-        {'id': 'env1', 'name': '开发环境', 'domain': 'http://dev.api.com'},
-        {'id': 'env2', 'name': '测试环境', 'domain': 'http://test.api.com'}
-    ]
-
-    # 获取指定环境的变量（如果有）
-    env_id = request.args.get('env_id', environments[0]['id'] if environments else '')
-    variables = [v for v in global_variables if v['project_id'] == project_id and v['env_id'] == env_id]
 
     return render_template('api_test/global_variables.html',
                            project=project,
@@ -1282,43 +1761,65 @@ def get_global_variables(project_id):
 @login_required
 def execute_test_case(case_id):
     """执行单个接口用例"""
-    case = next((c for c in test_cases if c['id'] == case_id), None)
-    if not case:
-        return jsonify({'success': False, 'message': '接口用例不存在'}), 404
+    try:
+        # 检查接口用例是否存在
+        case = db.fetch_one('SELECT * FROM API_TEST_CASE WHERE id = %s', (case_id,))
+        if not case:
+            return jsonify({'success': False, 'message': '接口用例不存在'}), 404
 
-    env_id = request.json.get('env_id')
-    # 实际项目中应根据环境获取域名等信息
-    env_domain = 'http://test.api.com'
+        env_id = request.json.get('env_id')
+        # 实际项目中应根据环境获取域名等信息
+        env_domain = 'http://test.api.com'
 
-    # 模拟接口执行
-    start_time = datetime.now()
-    time.sleep(0.5)  # 模拟网络请求耗时
-    end_time = datetime.now()
+        # 模拟接口执行
+        start_time = datetime.now()
+        time.sleep(0.5)  # 模拟网络请求耗时
+        end_time = datetime.now()
 
-    # 构建请求URL
-    domain = case['domain'] if case['domain'] else env_domain
-    url = f"{domain}{case['route']}"
+        # 构建请求URL
+        domain = case['domain'] if case['domain'] else env_domain
+        url = f"{domain}{case['route']}"
 
-    # 模拟执行结果
-    result = {
-        'case_id': case_id,
-        'start_time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
-        'end_time': end_time.strftime('%Y-%m-%d %H:%M:%S'),
-        'duration': (end_time - start_time).total_seconds() * 1000,
-        'request_url': url,
-        'request_method': case['method'],
-        'request_params': case['params'],
-        'response_status': 200,
-        'response_body': '{"status": "success", "data": "mock response"}',
-        'validation_result': 'passed',
-        'status': 'passed'
-    }
+        # 模拟执行结果
+        result = {
+            'case_id': case_id,
+            'start_time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
+            'end_time': end_time.strftime('%Y-%m-%d %H:%M:%S'),
+            'duration': (end_time - start_time).total_seconds() * 1000,
+            'request_url': url,
+            'request_method': case['method'],
+            'request_params': case['params'],
+            'response_status': 200,
+            'response_body': '{"status": "success", "data": "mock response"}',
+            'validation_result': 'passed',
+            'status': 'passed'
+        }
 
-    return jsonify({
-        'success': True,
-        'message': '用例执行完成',
-        'result': result
-    })
+        # 记录执行结果到数据库
+        db.insert('API_TEST_EXECUTION', {
+            'id': str(uuid.uuid4())[:8],
+            'case_id': case_id,
+            'project_id': case['project_id'],
+            'env_id': env_id,
+            'start_time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
+            'end_time': end_time.strftime('%Y-%m-%d %H:%M:%S'),
+            'duration': result['duration'],
+            'status': result['status'],
+            'request_url': url,
+            'request_method': case['method'],
+            'request_params': case['params'],
+            'response_status': result['response_status'],
+            'response_body': result['response_body'],
+            'validation_result': result['validation_result']
+        })
+
+        return jsonify({
+            'success': True,
+            'message': '用例执行完成',
+            'result': result
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'执行用例失败: {str(e)}'}), 500
 
 
 # 4.7 定时任务
@@ -1326,13 +1827,26 @@ def execute_test_case(case_id):
 @login_required
 def get_scheduled_tasks(project_id):
     """获取项目定时任务"""
-    project = next((p for p in projects if p['id'] == project_id), None)
-    if not project:
-        flash('项目不存在', 'error')
-        return redirect(url_for('api_test_projects'))
+    try:
+        # 检查项目是否存在
+        project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (project_id,))
+        if not project:
+            flash('项目不存在', 'error')
+            return redirect(url_for('api_test_projects'))
 
-    tasks = [t for t in scheduled_tasks if t['project_id'] == project_id]
-    groups = [g for g in test_case_groups if g['project_id'] == project_id]
+        # 获取项目定时任务
+        tasks = db.fetch_all('''
+            SELECT * FROM API_TEST_SCHEDULED_TASK WHERE project_id = %s
+        ''', (project_id,))
+
+        # 获取项目用例组
+        groups = db.fetch_all('''
+            SELECT * FROM API_TEST_GROUP WHERE project_id = %s
+        ''', (project_id,))
+    except Exception as e:
+        flash(f'获取定时任务失败: {str(e)}', 'error')
+        print(f'获取定时任务数据库错误: {e}')
+        return redirect(url_for('api_test_projects'))
 
     return render_template('api_test/scheduled_tasks.html',
                            project=project,
@@ -1344,44 +1858,64 @@ def get_scheduled_tasks(project_id):
 @login_required
 def create_scheduled_task(project_id):
     """创建定时任务"""
-    project = next((p for p in projects if p['id'] == project_id), None)
-    if not project:
-        return jsonify({'success': False, 'message': '项目不存在'}), 404
+    try:
+        # 检查项目是否存在
+        project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (project_id,))
+        if not project:
+            return jsonify({'success': False, 'message': '项目不存在'}), 404
 
-    trigger_type = request.json.get('trigger_type', 'specific_time')
-    trigger_value = request.json.get('trigger_value')
+        trigger_type = request.json.get('trigger_type', 'specific_time')
+        trigger_value = request.json.get('trigger_value')
 
-    # 计算下次执行时间
-    if trigger_type == 'specific_time':
-        next_execution = trigger_value
-    else:  # interval
-        next_execution = (datetime.now() + timedelta(seconds=int(trigger_value))).strftime('%Y-%m-%d %H:%M:%S')
+        # 计算下次执行时间
+        if trigger_type == 'specific_time':
+            next_execution = trigger_value
+        else:  # interval
+            next_execution = (datetime.now() + timedelta(seconds=int(trigger_value))).strftime('%Y-%m-%d %H:%M:%S')
 
-    task = {
-        'id': str(uuid.uuid4())[:8],
-        'project_id': project_id,
-        'name': request.json.get('name'),
-        'group_ids': request.json.get('group_ids', []),
-        'env_id': request.json.get('env_id'),
-        'trigger_type': trigger_type,
-        'trigger_value': trigger_value,
-        'next_execution': next_execution,
-        'notify_wechat': request.json.get('notify_wechat', False),
-        'notify_dingtalk': request.json.get('notify_dingtalk', False),
-        'notify_email': request.json.get('notify_email', False),
-        'notify_only_failure': request.json.get('notify_only_failure', True),
-        'description': request.json.get('description', ''),
-        'status': 'active',
-        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    }
+        task_id = str(uuid.uuid4())[:8]
+        name = request.json.get('name')
+        group_ids = request.json.get('group_ids', [])
+        # 将group_ids列表转换为逗号分隔的字符串
+        group_ids_str = ','.join(map(str, group_ids)) if group_ids else ''
+        env_id = request.json.get('env_id')
+        notify_wechat = request.json.get('notify_wechat', False)
+        notify_dingtalk = request.json.get('notify_dingtalk', False)
+        notify_email = request.json.get('notify_email', False)
+        notify_only_failure = request.json.get('notify_only_failure', True)
+        description = request.json.get('description', '')
 
-    # 验证必填字段
-    if not task['name'] or not task['group_ids'] or not task['env_id'] or not trigger_value:
-        return jsonify({'success': False, 'message': '任务名称、用例组、测试环境和触发条件为必填项'}), 400
+        # 验证必填字段
+        if not name or not group_ids or not env_id or not trigger_value:
+            return jsonify({'success': False, 'message': '任务名称、用例组、测试环境和触发条件为必填项'}), 400
 
-    scheduled_tasks.append(task)
-    return jsonify({'success': True, 'message': '定时任务创建成功'})
+        # 插入定时任务到数据库
+        db.insert('API_TEST_SCHEDULED_TASK', {
+            'id': task_id,
+            'project_id': project_id,
+            'name': name,
+            'group_ids': group_ids_str,
+            'env_id': env_id,
+            'trigger_type': trigger_type,
+            'trigger_value': trigger_value,
+            'next_execution': next_execution,
+            'notify_wechat': notify_wechat,
+            'notify_dingtalk': notify_dingtalk,
+            'notify_email': notify_email,
+            'notify_only_failure': notify_only_failure,
+            'description': description,
+            'status': 'active',
+            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        })
+
+        return jsonify({
+            'success': True,
+            'message': '定时任务创建成功',
+            'task_id': task_id
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'创建定时任务失败: {str(e)}'}), 500
 
 
 # 4.8 测试报告
@@ -1389,13 +1923,23 @@ def create_scheduled_task(project_id):
 @login_required
 def get_test_reports(project_id):
     """获取测试报告"""
-    project = next((p for p in projects if p['id'] == project_id), None)
-    if not project:
-        flash('项目不存在', 'error')
-        return redirect(url_for('api_test_projects'))
+    try:
+        # 检查项目是否存在
+        project = db.fetch_one('SELECT * FROM API_TEST_PROJECT WHERE id = %s', (project_id,))
+        if not project:
+            flash('项目不存在', 'error')
+            return redirect(url_for('api_test_projects'))
 
-    report_type = request.args.get('type', 'manual')
-    reports = [r for r in test_reports if r['project_id'] == project_id and r['type'] == report_type]
+        report_type = request.args.get('type', 'manual')
+        # 从数据库获取测试报告
+        reports = db.fetch_all('''
+            SELECT * FROM API_TEST_REPORT WHERE project_id = %s AND type = %s
+            ORDER BY created_at DESC
+        ''', (project_id, report_type))
+    except Exception as e:
+        flash(f'获取测试报告失败: {str(e)}', 'error')
+        print(f'获取测试报告数据库错误: {e}')
+        return redirect(url_for('api_test_projects'))
 
     return render_template('api_test/test_reports.html',
                            project=project,
@@ -1424,6 +1968,15 @@ def delete_db_connection():
         return jsonify({'success': True, 'message': '连接信息已删除成功'})
     else:
         return jsonify({'success': False, 'message': '未找到指定的连接信息'}), 404
+
+
+# 环境配置主页
+@app.route('/environment_config', methods=['GET']) 
+@login_required
+@admin_required
+def environment_config_home():
+    """环境配置主页"""
+    return render_template('environment_config.html')
 
 
 # 环境变量替换工具函数

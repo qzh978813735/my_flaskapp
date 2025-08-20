@@ -355,6 +355,7 @@
                     </button>
                 </div>
                 <form id="createProjectForm" action="{{ url_for('create_project') }}" method="post">
+                        {{ csrf_token() }}
                     <div class="modal-body">
                         <div class="form-group">
                             <label for="projectName">项目名称 <span class="text-danger">*</span></label>
@@ -389,7 +390,7 @@
                     </button>
                 </div>
                 <form id="editProjectForm" method="post" action="">
-
+                        {{ csrf_token() }}
                     <input type="hidden" id="editProjectId" name="project_id">
                     <div class="modal-body">
                         <div class="form-group">

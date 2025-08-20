@@ -15,6 +15,7 @@
         </div>
         <div class="card-body">
             <form method="post" id="addUserForm">
+                    {{ csrf_token() }}
                 <input type="hidden" name="action" value="add">
 
                 <div class="form-grid">
@@ -93,6 +94,7 @@
                         <td>{{ user_info.create_time }}</td>
                         <td>
                             <form method="post" class="status-form" style="display:inline;">
+                                    {{ csrf_token() }}
                                 <input type="hidden" name="action" value="toggle_status">
                                 <input type="hidden" name="username" value="{{ user_id }}">
                                 <button type="submit" class="btn {% if user_info.status == 'active' %}btn-danger{% else %}btn-success{% endif %}"

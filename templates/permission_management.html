@@ -16,6 +16,7 @@
         </div>
         <div class="card-body">
             <form method="post" id="permissionForm">
+                    {{ csrf_token() }}
                 <div class="form-group">
                     <label class="form-label" for="role">选择角色</label>
                     <select class="form-select" id="role" name="role" required onchange="updatePermissionCheckboxes(this.value)">

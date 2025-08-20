@@ -3,6 +3,7 @@
 """数据迁移脚本：将内存中的示例数据迁移到数据库中"""
 import os
 import sys
+import json
 import uuid
 from datetime import datetime
 
@@ -121,7 +122,7 @@ def migrate_db_connections():
         print(f"数据库连接数据迁移失败: {e}")
 
 
-def migrate_mock_interfaces():
+def migrate_mock_interfaces(admin_user_id):
     """迁移MOCK接口数据"""
     print("开始迁移MOCK接口数据...")
     try:
@@ -145,7 +146,7 @@ def migrate_mock_interfaces():
                 'response_status': interface['status_code'],
                 'response_headers': json.dumps({}),  # 原数据中没有headers
                 'description': interface.get('description', ''),
-                'created_by': 'admin',  # 假设是admin创建的
+                'created_by': admin_user_id,
                 'is_active': interface['status'] == 'active',
                 'created_at': interface['created_at'],
                 'updated_at': interface['updated_at']
@@ -160,7 +161,78 @@ def migrate_mock_interfaces():
         print(f"MOCK接口数据迁移失败: {e}")
 
 
-def migrate_email_config():
+def migrate_roles():
+    """迁移角色数据"""
+    print("开始迁移角色数据...")
+    try:
+        # 先清空表
+        db.execute_query("DELETE FROM ROLE")
+        
+        # 插入角色数据
+        roles = [
+            {'id': str(uuid.uuid4()), 'name': 'admin', 'description': '系统管理员', 'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
+            {'id': str(uuid.uuid4()), 'name': 'user', 'description': '普通用户', 'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        ]
+        
+        for role in roles:
+            db.insert('ROLE', role)
+            print(f"已迁移角色: {role['name']}")
+        
+        print("角色数据迁移完成！")
+    except Exception as e:
+        print(f"角色数据迁移失败: {e}")
+
+
+def migrate_users():
+    """迁移用户数据"""
+    print("开始迁移用户数据...")
+    try:
+        # 先清空表
+        db.execute_query("DELETE FROM USER")
+        db.execute_query("DELETE FROM USER_ROLE")
+        
+        # 获取admin角色ID
+        admin_role = db.fetch_one("SELECT id FROM ROLE WHERE name = 'admin'")
+        if not admin_role:
+            print("未找到admin角色，无法迁移用户数据")
+            return None
+        
+        admin_role_id = admin_role['id']
+        
+        # 创建admin用户
+        admin_id = str(uuid.uuid4())
+        admin_data = {
+                'id': admin_id,
+                'username': 'admin',
+                'password_hash': 'admin123',
+                'name': '管理员',
+                'email': 'admin@example.com',
+                'is_active': 1,
+                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+        
+        # 插入用户数据
+        db.insert('USER', admin_data)
+        print("已迁移管理员用户")
+        
+        # 关联用户和角色
+        user_role_data = {
+            'user_id': admin_id,
+            'role_id': admin_role_id,
+            'assigned_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        db.insert('USER_ROLE', user_role_data)
+        print("已关联管理员用户和角色")
+        
+        print("用户数据迁移完成！")
+        return admin_id  # 返回admin用户ID
+    except Exception as e:
+        print(f"用户数据迁移失败: {e}")
+        return None
+
+
+def migrate_email_config(admin_user_id):
     """迁移邮件配置数据"""
     print("开始迁移邮件配置数据...")
     try:
@@ -170,7 +242,7 @@ def migrate_email_config():
         # 准备数据
         data = {
             'id': str(uuid.uuid4()),
-            'user_id': 'admin_user_id',  # 假设admin用户ID
+            'user_id': admin_user_id,
             'sender_email': email_config['sender_email'],
             'sender_name': 'API测试平台',
             'smtp_server': email_config['smtp_server'],
@@ -201,15 +273,13 @@ def migrate_email_recipients():
             db.execute_query("SELECT 1 FROM EMAIL_RECIPIENT LIMIT 1")
         except:
             print("创建EMAIL_RECIPIENT表...")
-            db.execute_query(""
-"CREATE TABLE IF NOT EXISTS EMAIL_RECIPIENT (
+            db.execute_query("""CREATE TABLE IF NOT EXISTS EMAIL_RECIPIENT (
     id VARCHAR(36) PRIMARY KEY,
     email VARCHAR(100) NOT NULL UNIQUE,
     name VARCHAR(100) NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-""")
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )""")
         
         # 先清空表
         db.execute_query("DELETE FROM EMAIL_RECIPIENT")
@@ -243,6 +313,15 @@ def migrate_all():
     """迁移所有数据"""
     print("开始数据迁移...")
     
+    # 迁移角色数据
+    migrate_roles()
+    
+    # 迁移用户数据
+    admin_user_id = migrate_users()
+    if not admin_user_id:
+        print("用户数据迁移失败，无法继续迁移依赖用户的数据")
+        return
+    
     # 迁移测试环境数据
     migrate_test_environments()
     
@@ -253,10 +332,10 @@ def migrate_all():
     migrate_db_connections()
     
     # 迁移MOCK接口数据
-    migrate_mock_interfaces()
+    migrate_mock_interfaces(admin_user_id)
     
     # 迁移邮件配置数据
-    migrate_email_config()
+    migrate_email_config(admin_user_id)
     
     # 迁移邮件收件人数据
     migrate_email_recipients()

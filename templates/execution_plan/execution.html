@@ -88,6 +88,7 @@
         <div class="modal-body">
             <p>确定要立即执行计划 "<span id="executePlanName" style="font-weight: 600;"></span>" 吗？</p>
             <form id="executeForm" method="post">
+                {{ csrf_token() }}
                 <input type="hidden" name="plan_id" id="executePlanId">
             </form>
         </div>

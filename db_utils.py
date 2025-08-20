@@ -16,13 +16,14 @@ class DatabaseUtils:
         try:
             # 创建连接
             self.connection = mysql.connector.connect(
-                host=DB_CONFIG['host'],
-                port=DB_CONFIG['port'],
-                user=DB_CONFIG['user'],
-                password=DB_CONFIG['password'],
-                database=DB_CONFIG['database'],
-                charset=DB_CONFIG['charset']
-            )
+            host=DB_CONFIG['host'],
+            port=DB_CONFIG['port'],
+            user=DB_CONFIG['user'],
+            password=DB_CONFIG['password'],
+            database=DB_CONFIG['database'],
+            charset=DB_CONFIG['charset'],
+            use_pure=True  # 使用纯Python实现，而不是C扩展
+        )
 
             # 创建游标
             if DB_CONFIG.get('cursorclass') == 'DictCursor':
@@ -32,6 +33,7 @@ class DatabaseUtils:
 
         except Error as e:
             print(f"数据库连接错误: {e}")
+            print(f"连接参数: host={DB_CONFIG['host']}, port={DB_CONFIG['port']}, user={DB_CONFIG['user']}, database={DB_CONFIG['database']}")
             raise
 
     def execute_query(self, query, params=None):
@@ -39,12 +41,22 @@ class DatabaseUtils:
         try:
             if not self.connection or not self.connection.is_connected():
                 self.connect()
+            elif not self.cursor:
+                # 连接存在但游标不存在，重新创建游标
+                if DB_CONFIG.get('cursorclass') == 'DictCursor':
+                    self.cursor = self.connection.cursor(dictionary=True)
+                else:
+                    self.cursor = self.connection.cursor()
             self.cursor.execute(query, params or ())
             self.connection.commit()
             return True
         except Error as e:
             print(f"执行查询错误: {e}\nQuery: {query}\nParams: {params}")
             self.connection.rollback()
+            # 发生错误时，关闭游标以便下次操作时重新创建
+            if self.cursor:
+                self.cursor.close()
+                self.cursor = None
             raise
 
     def fetch_one(self, query, params=None):
@@ -52,10 +64,20 @@ class DatabaseUtils:
         try:
             if not self.connection or not self.connection.is_connected():
                 self.connect()
+            elif not self.cursor:
+                # 连接存在但游标不存在，重新创建游标
+                if DB_CONFIG.get('cursorclass') == 'DictCursor':
+                    self.cursor = self.connection.cursor(dictionary=True)
+                else:
+                    self.cursor = self.connection.cursor()
             self.cursor.execute(query, params or ())
             return self.cursor.fetchone()
         except Error as e:
             print(f"查询单条记录错误: {e}\nQuery: {query}\nParams: {params}")
+            # 发生错误时，关闭游标以便下次操作时重新创建
+            if self.cursor:
+                self.cursor.close()
+                self.cursor = None
             raise
 
     def fetch_all(self, query, params=None):
@@ -63,18 +85,31 @@ class DatabaseUtils:
         try:
             if not self.connection or not self.connection.is_connected():
                 self.connect()
+            elif not self.cursor:
+                # 连接存在但游标不存在，重新创建游标
+                if DB_CONFIG.get('cursorclass') == 'DictCursor':
+                    self.cursor = self.connection.cursor(dictionary=True)
+                else:
+                    self.cursor = self.connection.cursor()
             self.cursor.execute(query, params or ())
             return self.cursor.fetchall()
         except Error as e:
             print(f"查询多条记录错误: {e}\nQuery: {query}\nParams: {params}")
+            # 发生错误时，关闭游标以便下次操作时重新创建
+            if self.cursor:
+                self.cursor.close()
+                self.cursor = None
             raise
 
     def insert(self, table, data):
         """插入数据到表中"""
         try:
-            # 生成ID（如果没有提供）
-            if 'id' not in data:
+            # 对于USER_ROLE表，不自动添加id字段
+            if table != 'USER_ROLE' and 'id' not in data:
                 data['id'] = str(uuid.uuid4())
+            elif table == 'USER_ROLE' and 'id' not in data:
+                # 移除可能存在的id字段（如果有）
+                data.pop('id', None)
 
             # 构建字段和值
             fields = ', '.join(data.keys())
@@ -86,7 +121,7 @@ class DatabaseUtils:
 
             # 执行查询
             self.execute_query(query, values)
-            return data['id']
+            return data.get('id')
         except Error as e:
             print(f"插入数据错误: {e}\nTable: {table}\nData: {data}")
             raise
