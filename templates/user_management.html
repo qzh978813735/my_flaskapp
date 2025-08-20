@@ -36,8 +36,6 @@
             margin-bottom: 20px;
         }
         .sidebar-logo {
-            font-size: 18px;
-            font-weight: 600;
             color: #1a73e8;
             display: flex;
             align-items: center;
@@ -367,6 +365,12 @@
                             </div>
 
                             <div class="form-group">
+                                <label class="form-label" for="email">邮箱 <span style="color: red;">*</span></label>
+                                <input type="email" class="form-control" id="email" name="email" required placeholder="请输入有效的邮箱地址">
+                                <div class="error-message" id="emailError"></div>
+                            </div>
+
+                            <div class="form-group">
                                 <label class="form-label" for="password">密码 <span style="color: red;" id="passwordRequired">*</span></label>
                                 <input type="password" class="form-control" id="password" name="password">
                                 <small style="color: #5f6368; margin-top: 5px; display: block;">
@@ -416,6 +420,7 @@
                                         <th>序号</th>
                                         <th>用户名</th>
                                         <th>姓名</th>
+                                        <th>邮箱</th>
                                         <th>角色</th>
                                         <th>状态</th>
                                         <th>创建时间</th>
@@ -428,6 +433,7 @@
                                         <td>{{ loop.index }}</td>
                                         <td>{{ user_id }}</td>
                                         <td>{{ user_info['name'] }}</td>
+                                        <td>{{ user_info.get('email', '') }}</td>
                                         <td>
                                             <span class="role-badge role-{{ user_info.role }}">
                                                 {% if user_info.role == 'admin' %}超级管理员{% elif user_info.role == 'operator' %}操作员{% else %}查看者{% endif %}
@@ -480,6 +486,7 @@
                 document.getElementById('username').value = username;
                 document.getElementById('username').readOnly = true;  // 用户名不可修改
                 document.getElementById('name').value = userData.name;
+                document.getElementById('email').value = userData.email || '';
                 document.getElementById('role').value = userData.role;
                 document.getElementById('status').checked = userData.status === 'active';
                 document.getElementById('password').required = false;

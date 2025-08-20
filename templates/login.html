@@ -79,6 +79,17 @@
         .btn:hover {
             background-color: #1765cc;
         }
+        .forgot-password {
+            margin-top: 15px;
+            text-align: center;
+        }
+        .forgot-password a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+        .forgot-password a:hover {
+            text-decoration: underline;
+        }
         .flash-messages {
             margin-bottom: 20px;
         }
@@ -98,43 +109,40 @@
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <div class="login-header">
-            <div class="login-logo">
-                <i class="fas fa-robot"></i>
-                <span>自动化测试平台</span>
+        <div class="login-container">
+            <div class="login-header">
+                <div class="login-logo">
+                    <i class="fas fa-robot"></i>
+                    <h2>自动化测试平台</h2>
+                </div>
             </div>
-            <h2>用户登录</h2>
+            <div class="flash-messages">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="message {{ category }}">
+                                <i class="fas {% if category == 'error' %}fa-exclamation-circle{% else %}fa-check-circle{% endif %}"></i>
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+            </div>
+            <form method="POST" action="{{ url_for('login') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <label for="username" class="form-label">用户名</label>
+                    <input type="text" id="username" name="username" class="form-control" placeholder="请输入用户名" required>
+                </div>
+                <div class="form-group">
+                    <label for="password" class="form-label">密码</label>
+                    <input type="password" id="password" name="password" class="form-control" placeholder="请输入密码" required>
+                </div>
+                <button type="submit" class="btn">登录</button>
+                <div class="forgot-password">
+                    <a href="{{ url_for('forgot_password') }}">忘记密码？</a>
+                </div>
+            </form>
         </div>
-
-        <!-- 消息提示 -->
-        <div class="flash-messages">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="message {{ category }}">
-                            <i class="fas fa-exclamation-circle"></i>
-                            <span>{{ message }}</span>
-                        </div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-        </div>
-
-        <!-- 登录表单（添加CSRF令牌） -->
-        <form action="{{ url_for('login') }}" method="post">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-            <div class="form-group">
-                <label class="form-label" for="username">用户名</label>
-                <input type="text" class="form-control" id="username" name="username" required autofocus>
-            </div>
-            <div class="form-group">
-                <label class="form-label" for="password">密码</label>
-                <input type="password" class="form-control" id="password" name="password" required>
-            </div>
-            <button type="submit" class="btn">登录系统</button>
-        </form>
-    </div>
-</body>
+    </body>
 </html>

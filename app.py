@@ -17,6 +17,8 @@ import threading
 import time
 from functools import wraps
 
+# 导入数据库工具
+from db_utils import db
 
 # 初始化Flask应用
 app = Flask(__name__)
@@ -39,6 +41,9 @@ email_config = {  # 邮件配置默认值
     'use_tls': True
 }
 email_recipients = []  # 邮件收件人
+
+# 存储密码重置令牌
+password_reset_tokens = {}
 
 # 初始化一些示例数据
 test_environments.extend([
@@ -137,17 +142,6 @@ db_connections.append({
     'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 })
 
-users = {  # 用户数据
-    'admin': {
-        'password': 'admin123',  # 实际项目需哈希存储
-        'name': '管理员',
-        'role': 'admin',
-        'status': 'active',
-        'create_time': '2023-01-01 00:00:00'
-    }
-}
-
-
 # 登录验证装饰器
 def login_required(f):
     @wraps(f)
@@ -205,6 +199,121 @@ def logout():
     return redirect(url_for('login'))
 
 
+# 忘记密码路由
+@app.route('/forgot_password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip()
+        if not email:
+            flash('邮箱不能为空', 'error')
+            return render_template('forgot_password.html')
+
+        # 查找匹配的用户
+        user_found = None
+        for username, user_info in users.items():
+            if user_info.get('email') == email:
+                user_found = username
+                break
+
+        if not user_found:
+            flash('未找到该邮箱对应的用户', 'error')
+            return render_template('forgot_password.html')
+
+        # 生成重置令牌
+        token = str(uuid.uuid4())
+        expiry = datetime.now() + timedelta(hours=1)  # 1小时后过期
+        password_reset_tokens[token] = {
+            'username': user_found,
+            'expiry': expiry
+        }
+
+        # 构建重置链接
+        reset_url = url_for('reset_password', token=token, _external=True)
+
+        # 发送邮件
+        try:
+            # 检查邮件配置
+            if not all([email_config['smtp_server'], email_config['sender_email'], email_config['sender_password']]):
+                flash('邮件服务器未配置，无法发送重置链接', 'error')
+                return render_template('forgot_password.html')
+
+            # 构建邮件
+            msg = MIMEMultipart()
+            msg['From'] = email_config['sender_email']
+            msg['To'] = email
+            msg['Subject'] = '密码重置请求 - 自动化测试平台'
+
+            body = f'''
+            您收到这封邮件是因为有人请求重置您在自动化测试平台的密码。
+
+            请点击以下链接重置您的密码（链接有效期为1小时）：
+            {reset_url}
+
+            如果您没有请求重置密码，请忽略此邮件。
+            '''
+            msg.attach(MIMEText(body, 'plain'))
+
+            # 发送邮件
+            server = smtplib.SMTP(email_config['smtp_server'], email_config['smtp_port'])
+            if email_config['use_tls']:
+                server.starttls()
+            server.login(email_config['sender_email'], email_config['sender_password'])
+            text = msg.as_string()
+            server.sendmail(email_config['sender_email'], email, text)
+            server.quit()
+
+            flash('重置密码链接已发送到您的邮箱，请查收', 'success')
+            return redirect(url_for('login'))
+
+        except Exception as e:
+            flash(f'发送邮件失败: {str(e)}', 'error')
+            return render_template('forgot_password.html')
+
+    return render_template('forgot_password.html')
+
+
+# 重置密码路由
+@app.route('/reset_password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    # 检查令牌是否有效
+    if token not in password_reset_tokens:
+        return render_template('reset_password.html', invalid_token=True)
+
+    token_data = password_reset_tokens[token]
+    if datetime.now() > token_data['expiry']:
+        del password_reset_tokens[token]  # 删除过期令牌
+        return render_template('reset_password.html', invalid_token=True)
+
+    username = token_data['username']
+
+    if request.method == 'POST':
+        password = request.form.get('password', '').strip()
+        confirm_password = request.form.get('confirm_password', '').strip()
+
+        if not password or not confirm_password:
+            flash('密码和确认密码不能为空', 'error')
+            return render_template('reset_password.html', token=token)
+
+        if password != confirm_password:
+            flash('两次输入的密码不一致', 'error')
+            return render_template('reset_password.html', token=token)
+
+        if len(password) < 6:
+            flash('密码长度不能少于6位', 'error')
+            return render_template('reset_password.html', token=token)
+
+        # 更新密码
+        users[username]['password'] = password  # 实际项目中应该哈希存储
+
+        # 删除已使用的令牌
+        del password_reset_tokens[token]
+
+        flash('密码已成功重置，请使用新密码登录', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('reset_password.html', token=token)
+
+
 # 仪表盘路由
 @app.route('/')
 @login_required
@@ -228,7 +337,7 @@ def dashboard():
                            recent_logs=recent_logs)
 
 
-# 用户管理路由
+# 更新用户管理路由，添加邮箱字段
 @app.route('/user_management', methods=['GET', 'POST'])
 @admin_required
 def user_management():
@@ -242,10 +351,11 @@ def user_management():
             password = request.form.get('password', '').strip()
             name = request.form.get('name', '').strip()
             role = request.form.get('role', 'user')
+            email = request.form.get('email', '').strip()
 
             # 验证
-            if not username or not password or not name:
-                flash('用户名、密码和姓名不能为空', 'error')
+            if not username or not password or not name or not email:
+                flash('用户名、密码、姓名和邮箱不能为空', 'error')
                 return redirect(url_for('user_management'))
 
             if username in users:
@@ -256,13 +366,18 @@ def user_management():
                 flash('密码长度不能少于6位', 'error')
                 return redirect(url_for('user_management'))
 
+            if '@' not in email:
+                flash('邮箱格式不正确', 'error')
+                return redirect(url_for('user_management'))
+
             # 添加用户
             users[username] = {
                 'password': password,
                 'name': name,
                 'role': role,
                 'status': 'active',
-                'create_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                'create_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'email': email
             }
             flash(f'用户 "{name}" 创建成功', 'success')
             return redirect(url_for('user_management'))
@@ -272,13 +387,18 @@ def user_management():
             name = request.form.get('name', '').strip()
             role = request.form.get('role', 'user')
             status = request.form.get('status', 'inactive')
+            email = request.form.get('email', '').strip()
 
-            if not username or not name:
-                flash('用户名和姓名不能为空', 'error')
+            if not username or not name or not email:
+                flash('用户名、姓名和邮箱不能为空', 'error')
                 return redirect(url_for('user_management'))
 
             if username not in users:
                 flash('用户不存在', 'error')
+                return redirect(url_for('user_management'))
+
+            if '@' not in email:
+                flash('邮箱格式不正确', 'error')
                 return redirect(url_for('user_management'))
 
             # 不允许修改管理员自身角色
@@ -290,6 +410,7 @@ def user_management():
             users[username]['name'] = name
             users[username]['role'] = role
             users[username]['status'] = status
+            users[username]['email'] = email
             flash(f'用户 "{name}" 更新成功', 'success')
             return redirect(url_for('user_management'))
 
@@ -1281,259 +1402,54 @@ def get_test_reports(project_id):
                            reports=reports,
                            report_type=report_type)
 
-# 环境配置相关路由
-# 环境配置首页
-@app.route('/environment_config')
+
+
+
+# 删除DB连接信息
+@app.route('/environment_config/database/connection/delete', methods=['POST'])
 @login_required
 @admin_required
-def environment_config_home():
-    # 默认重定向到测试环境管理页面
-    print("Redirecting to test_environment_management")  # 添加调试信息
-    return redirect(url_for('test_environment_management'))
+def delete_db_connection():
+    conn_id = request.json.get('id')
+
+    if not conn_id:
+        return jsonify({'success': False, 'message': '连接ID为必填项'}), 400
+
+    # 删除连接信息
+    global db_connections
+    original_count = len(db_connections)
+    db_connections = [conn for conn in db_connections if conn['id'] != conn_id]
+
+    if len(db_connections) < original_count:
+        return jsonify({'success': True, 'message': '连接信息已删除成功'})
+    else:
+        return jsonify({'success': False, 'message': '未找到指定的连接信息'}), 404
 
 
-# 测试环境管理
-@app.route('/environment_config/test_environment', methods=['GET', 'POST'])
+# 环境变量替换工具函数
+@app.route('/api/environment/variable/replace', methods=['POST'])
 @login_required
-@admin_required
-def test_environment_management():
-    global test_environments
-    print("Accessing test_environment_management route")  # 添加调试信息
-
-    if request.method == 'POST':
-        env_id = request.json.get('id')
-        name = request.json.get('name')
-        protocol = request.json.get('protocol')
-        domain = request.json.get('domain')
-        description = request.json.get('description')
-
-        # 验证必填字段
-        if not name or not protocol or not domain:
-            return jsonify({'success': False, 'message': '环境名称、HTTP协议和服务域名为必填项'}), 400
-
-        # 检查名称唯一性
-        for env in test_environments:
-            if env['id'] != env_id and env['name'] == name:
-                return jsonify({'success': False, 'message': f'环境名称 "{name}" 已存在'}), 400
-
-        if env_id:
-            # 更新现有环境
-            for i, env in enumerate(test_environments):
-                if env['id'] == env_id:
-                    test_environments[i] = {
-                        'id': env_id,
-                        'name': name,
-                        'protocol': protocol,
-                        'domain': domain,
-                        'description': description,
-                        'status': env['status'],  # 保持原有状态
-                        'created_at': env['created_at'],  # 保持创建时间
-                        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    }
-                    return jsonify({'success': True, 'message': f'环境 "{name}" 更新成功'})
-            return jsonify({'success': False, 'message': '未找到指定的测试环境'}), 404
-        else:
-            # 添加新环境
-            new_env = {
-                'id': str(uuid.uuid4())[:8],
-                'name': name,
-                'protocol': protocol,
-                'domain': domain,
-                'description': description,
-                'status': 'active',  # 默认为启用状态
-                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-            test_environments.append(new_env)
-            return jsonify({'success': True, 'message': f'环境 "{name}" 创建成功'})
-
-    # GET请求，获取环境列表
-    print("Rendering test_environment.html")  # 添加调试信息
-    return render_template('environment_config/test_environment.html',
-                           username=session['name'],
-                           environments=test_environments)
-
-
-# 切换测试环境状态（启用/禁用）
-@app.route('/environment_config/test_environment/toggle_status', methods=['POST'])
-@login_required
-@admin_required
-def toggle_environment_status():
-    env_id = request.json.get('id')
-    new_status = request.json.get('status')
-
-    if not env_id or not new_status:
-        return jsonify({'success': False, 'message': '环境ID和状态为必填项'}), 400
-
-    for i, env in enumerate(test_environments):
-        if env['id'] == env_id:
-            test_environments[i]['status'] = new_status
-            test_environments[i]['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            action = '启用' if new_status == 'active' else '禁用'
-            return jsonify({'success': True, 'message': f'环境 "{env["name"]}" 已{action}成功'})
-
-    return jsonify({'success': False, 'message': '未找到指定的测试环境'}), 404
-
-
-# DB配置管理
-@app.route('/environment_config/database', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def database_config_management():
-    global database_configs
-
-    if request.method == 'POST':
-        db_id = request.json.get('id')
-        name = request.json.get('name')
-        db_type = request.json.get('type')
-        description = request.json.get('description')
-
-        # 验证必填字段
-        if not name or not db_type:
-            return jsonify({'success': False, 'message': 'DB名称和类型为必填项'}), 400
-
-        # 检查名称唯一性
-        for db in database_configs:
-            if db['id'] != db_id and db['name'] == name:
-                return jsonify({'success': False, 'message': f'DB名称 "{name}" 已存在'}), 400
-
-        if db_id:
-            # 更新现有DB配置
-            for i, db in enumerate(database_configs):
-                if db['id'] == db_id:
-                    database_configs[i] = {
-                        'id': db_id,
-                        'name': name,
-                        'type': db_type,
-                        'description': description,
-                        'status': db['status'],  # 保持原有状态
-                        'created_at': db['created_at'],  # 保持创建时间
-                        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    }
-                    return jsonify({'success': True, 'message': f'DB配置 "{name}" 更新成功'})
-            return jsonify({'success': False, 'message': '未找到指定的DB配置'}), 404
-        else:
-            # 添加新DB配置
-            new_db = {
-                'id': str(uuid.uuid4())[:8],
-                'name': name,
-                'type': db_type,
-                'description': description,
-                'status': 'active',  # 默认为启用状态
-                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-            database_configs.append(new_db)
-            return jsonify({'success': True, 'message': f'DB配置 "{name}" 创建成功'})
-
-    # GET请求，获取DB配置列表
-    return render_template('environment_config/database_config.html',
-                           username=session['name'],
-                           db_configs=database_configs)
-
-
-# 切换DB配置状态（启用/禁用）
-@app.route('/environment_config/database/toggle_status', methods=['POST'])
-@login_required
-@admin_required
-def toggle_db_config_status():
-    db_id = request.json.get('id')
-    new_status = request.json.get('status')
-
-    if not db_id or not new_status:
-        return jsonify({'success': False, 'message': 'DB配置ID和状态为必填项'}), 400
-
-    for i, db in enumerate(database_configs):
-        if db['id'] == db_id:
-            database_configs[i]['status'] = new_status
-            database_configs[i]['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            action = '启用' if new_status == 'active' else '禁用'
-            return jsonify({'success': True, 'message': f'DB配置 "{db["name"]}" 已{action}成功'})
-
-    return jsonify({'success': False, 'message': '未找到指定的DB配置'}), 404
-
-
-# DB连接信息管理
-@app.route('/environment_config/database/<db_id>/connection', methods=['GET'])
-@login_required
-@admin_required
-def db_connection_info(db_id):
-    # 获取DB配置
-    db_config = next((db for db in database_configs if db['id'] == db_id), None)
-    if not db_config:
-        flash('未找到指定的DB配置', 'error')
-        return redirect(url_for('database_config_management'))
-
-    # 获取所有测试环境
-    environments = test_environments
-
-    # 获取DB连接信息
-    connections = [conn for conn in db_connections if conn['db_id'] == db_id]
-
-    return render_template('environment_config/db_connection_info.html',
-                           username=session['name'],
-                           db_config=db_config,
-                           environments=environments,
-                           db_connections=connections)
-
-
-# 更新DB连接信息
-@app.route('/environment_config/database/connection/update', methods=['POST'])
-@login_required
-@admin_required
-def update_db_connection():
-    db_id = request.json.get('db_id')
+def replace_environment_variables():
     env_id = request.json.get('env_id')
-    host = request.json.get('host')
-    port = request.json.get('port')
-    user = request.json.get('user')
-    password = request.json.get('password')
-    db_name = request.json.get('db_name')
+    service_name = request.json.get('service_name')
 
-    # 验证必填字段
-    if not db_id or not env_id or not host or not port or not db_name:
-        return jsonify({'success': False, 'message': 'DB ID、环境 ID、Host、Port 和 DB Name 为必填项'}), 400
+    if not env_id or not service_name:
+        return jsonify({'success': False, 'message': '环境ID和服务名为必填项'}), 400
 
-    # 检查DB配置和环境是否存在
-    db_config = next((db for db in database_configs if db['id'] == db_id), None)
+    # 获取环境配置
     environment = next((env for env in test_environments if env['id'] == env_id), None)
-
-    if not db_config:
-        return jsonify({'success': False, 'message': '未找到指定的DB配置'}), 404
     if not environment:
         return jsonify({'success': False, 'message': '未找到指定的环境'}), 404
 
-    # 查找现有连接
-    connection = next((conn for conn in db_connections if conn['db_id'] == db_id and conn['env_id'] == env_id), None)
+    # 替换${service}变量
+    domain = environment['domain'].replace('${service}', service_name)
+    full_url = f"{environment['protocol']}://{domain}"
 
-    connection_data = {
-        'db_id': db_id,
-        'env_id': env_id,
-        'host': host,
-        'port': port,
-        'user': user,
-        'db_name': db_name,
-        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    }
-
-    # 如果提供了密码，则更新密码
-    if password is not None:
-        connection_data['password'] = password
-
-    if connection:
-        # 更新现有连接
-        for i, conn in enumerate(db_connections):
-            if conn['db_id'] == db_id and conn['env_id'] == env_id:
-                connection_data['id'] = conn['id']
-                connection_data['created_at'] = conn['created_at']
-                db_connections[i] = connection_data
-                return jsonify({'success': True, 'message': f'{environment["name"]} 的连接信息已更新'})
-    else:
-        # 添加新连接
-        connection_data['id'] = str(uuid.uuid4())[:8]
-        connection_data['created_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        db_connections.append(connection_data)
-        return jsonify({'success': True, 'message': f'{environment["name"]} 的连接信息已创建'})
+    return jsonify({
+        'success': True,
+        'domain': domain,
+        'full_url': full_url
+    })
 
 
 # 启动应用
